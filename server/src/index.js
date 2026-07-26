@@ -16,7 +16,7 @@ import redemptionRoutes from './routes/redemptions.js'
 import topupRoutes from './routes/topup.js'
 import usersRoutes from './routes/users.js'
 import settingsRoutes from './routes/settings.js'
-import relayRoutes, { inflightRelayCount } from './relay.js'
+import relayRoutes, { inflightRelayCount, geminiRouter } from './relay.js'
 import groupsRoutes from './routes/groups.js'
 import adminRoutes from './routes/admin.js'
 import { startHealthChecker } from './health.js'
@@ -49,8 +49,11 @@ app.use('/api/settings', settingsRoutes)
 app.use('/api/groups', groupsRoutes)
 app.use('/api/admin', adminRoutes)
 
-// OpenAI 兼容中转入口
+// 中转入口:三种入站协议
+// /v1      OpenAI 兼容 + Anthropic Messages(/v1/messages)
+// /v1beta  Gemini(/v1beta/models/{model}:generateContent)
 app.use('/v1', relayRoutes)
+app.use('/v1beta', geminiRouter)
 
 app.get('/api/health', (req, res) => res.json({ success: true, name: 'RouteX', time: Date.now() }))
 

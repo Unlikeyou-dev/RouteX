@@ -5,11 +5,14 @@ import { computeCost } from './pricing.js'
 import { RELAY_TIMEOUT_MS } from './config.js'
 import {
   buildUpstreamRequest, convertResponse, createStreamTransformer, wantsThinking,
-  buildAnthropicPassthrough, anthropicUsage
+  buildAnthropicPassthrough, buildGeminiPassthrough, anthropicUsage
 } from './adapters.js'
 import {
   anthropicRequestToOpenAI, openaiResponseToAnthropic, createAnthropicEncoder, anthropicErrorBody
 } from './protocols/anthropic-in.js'
+import {
+  geminiRequestToOpenAI, openaiResponseToGemini, createGeminiEncoder, geminiErrorBody
+} from './protocols/gemini-in.js'
 import { splitModels, splitList, channelServesGroup, redactSecrets } from './util.js'
 import { consumeRelayQuota } from './middleware/ratelimit.js'
 
@@ -127,6 +130,9 @@ function countPromptTokens(body) {
 // Anthropic 客户端 SDK 只认 {type:'error',error:{type,message}} 这个结构,
 // 回 OpenAI 风格的错误体会让它们解析失败、报出一堆无关的异常。
 function fail(req, res, status, message, code = null) {
+  if (req.inFormat === 'gemini') {
+    return res.status(status).json(geminiErrorBody(status, message))
+  }
   if (req.inFormat === 'anthropic') {
     const type = status === 401 ? 'authentication_error'
       : status === 403 ? 'permission_error'
@@ -145,9 +151,12 @@ function fail(req, res, status, message, code = null) {
 function relayAuth(req, res, next) {
   const header = req.headers.authorization || ''
   const bearer = header.startsWith('Bearer ') ? header.slice(7).trim() : null
-  const key = bearer || String(req.headers['x-api-key'] || '').trim()
+  const key = bearer
+    || String(req.headers['x-api-key'] || '').trim()
+    || String(req.headers['x-goog-api-key'] || '').trim()
+    || String(req.query?.key || '').trim()
   if (!key || !key.startsWith('sk-')) {
-    return fail(req, res, 401, '缺少 API Key,请在 Authorization: Bearer 或 x-api-key 头中携带 sk-xxx')
+    return fail(req, res, 401, '缺少 API Key —— 可用 Authorization: Bearer、x-api-key 或 x-goog-api-key 携带 sk-xxx')
   }
   const token = db.prepare('SELECT * FROM tokens WHERE key = ?').get(key)
   if (!token || token.status !== 1) return fail(req, res, 401, 'API Key 无效或已被禁用', 'invalid_api_key')
@@ -349,6 +358,56 @@ router.post('/messages', markFormat('anthropic'), relayAuth, async (req, res) =>
   await guarded(req, res, () => handleRelay(req, res, '/chat/completions'))
 })
 
+// ---- Gemini 入站 ----
+// 路径形如 /v1beta/models/gemini-2.5-pro:generateContent —— 模型名和方法名
+// 用冒号连在同一段里,所以整段先当参数取下来再按最后一个冒号切开。
+export const geminiRouter = Router()
+
+geminiRouter.get('/models', markFormat('gemini'), relayAuth, (req, res) => {
+  const group = req.relayUser.group_name || 'default'
+  const limits = splitList(req.relayToken.model_limits)
+  const set = new Set()
+  for (const c of db.prepare('SELECT models, group_names FROM channels WHERE status = 1').all()) {
+    if (!channelServesGroup(c, group)) continue
+    for (const m of splitModels(c.models)) {
+      if (!limits.length || limits.includes(m)) set.add(m)
+    }
+  }
+  res.json({
+    models: [...set].sort().map(id => ({
+      name: `models/${id}`,
+      displayName: id,
+      supportedGenerationMethods: ['generateContent', 'streamGenerateContent', 'countTokens']
+    }))
+  })
+})
+
+geminiRouter.post('/models/:target', markFormat('gemini'), relayAuth, async (req, res) => {
+  const target = String(req.params.target || '')
+  const at = target.lastIndexOf(':')
+  const model = at > 0 ? target.slice(0, at) : target
+  const method = at > 0 ? target.slice(at + 1) : 'generateContent'
+  const native = req.body || {}
+
+  let canonical
+  try {
+    canonical = geminiRequestToOpenAI(native, model)
+  } catch (e) {
+    return fail(req, res, 400, `请求体解析失败:${e.message}`)
+  }
+
+  // countTokens 不打上游 —— 本地分词器数一遍就够,还省了一次计费
+  if (method === 'countTokens') {
+    const n = countChatTokens(canonical.messages) +
+      (canonical.tools?.length ? countText(JSON.stringify(canonical.tools)) : 0)
+    return res.json({ totalTokens: n, totalBillableCharacters: n })
+  }
+
+  req.nativeBody = native
+  req.canonicalBody = { ...canonical, ...(method === 'streamGenerateContent' ? { stream: true } : {}) }
+  await guarded(req, res, () => handleRelay(req, res, '/chat/completions'))
+})
+
 // 上游 4xx 的处理策略:
 // - 401/403  上游密钥问题,是站长的事,绝不能把上游原文(常含我们的 Key)回给用户
 // - 404      上游不认这个模型
@@ -428,14 +487,18 @@ async function handleRelay(req, res, path) {
     const upstreamModel = mapModel(channel, model)
     const apiKey = pickKey(channel)
     // 入站与上游是同一种协议时走透传:不做任何转换,保真度最高
-    const passthrough = req.inFormat === 'anthropic' && channel.type === 'anthropic'
-    const { url, headers, payload } = passthrough
+    const passthrough =
+      (req.inFormat === 'anthropic' && channel.type === 'anthropic') ||
+      (req.inFormat === 'gemini' && channel.type === 'gemini')
+    const { url, headers, payload } = passthrough && channel.type === 'anthropic'
       ? buildAnthropicPassthrough(
         channel, apiKey,
         requestedMax > 0 ? req.nativeBody : { ...req.nativeBody, max_tokens: outputCap },
         upstreamModel, isStream
       )
-      : buildUpstreamRequest(channel, apiKey, path, cappedBody, upstreamModel, isStream)
+      : passthrough && channel.type === 'gemini'
+        ? buildGeminiPassthrough(channel, apiKey, req.nativeBody, upstreamModel, isStream, outputCap)
+        : buildUpstreamRequest(channel, apiKey, path, cappedBody, upstreamModel, isStream)
 
     let upstream
     try {
@@ -521,6 +584,11 @@ async function relayJson(req, res, upstream, channel, model, body, start, reserv
       io.passthrough ? { ...raw, model } : openaiResponseToAnthropic(data, model)
     )
   }
+  if (req.inFormat === 'gemini') {
+    return res.status(200).json(
+      io.passthrough ? { ...raw, modelVersion: model } : openaiResponseToGemini(data, model)
+    )
+  }
   res.status(200).json(data)
 }
 
@@ -537,9 +605,10 @@ async function relayStream(req, res, upstream, channel, model, body, start, rese
   // 上游是原生协议(anthropic/gemini)时,先用 transformer 转成 OpenAI SSE
   const nativeUpstream = channel.type !== 'openai'
   const transformer = nativeUpstream ? createStreamTransformer(channel, model) : null
-  // 入站是 Anthropic 且不是透传时,还要再把 OpenAI SSE 编码成 Anthropic 事件
-  const toAnthropic = req.inFormat === 'anthropic' && !io.passthrough
-  const encoder = toAnthropic ? createAnthropicEncoder(model) : null
+  // 入站不是 OpenAI 且不是透传时,还要把 OpenAI SSE 编码成入站协议的事件
+  const reencode = req.inFormat !== 'openai' && !io.passthrough
+  const encoder = !reencode ? null
+    : (req.inFormat === 'anthropic' ? createAnthropicEncoder(model) : createGeminiEncoder(model))
   // 入站与上游同协议:字节原样转发,只旁路统计用量
   const rawPassthrough = io.passthrough || (req.inFormat === 'openai' && !nativeUpstream)
 
@@ -579,20 +648,38 @@ async function relayStream(req, res, upstream, channel, model, body, start, rese
     }
   }
 
+  // Gemini SSE 透传:每块都带完整的 usageMetadata,取最后一次即可
+  const scanGemini = obj => {
+    if (!obj) return
+    if (obj.usageMetadata) {
+      const um = obj.usageMetadata
+      usage = {
+        prompt_tokens: um.promptTokenCount ?? 0,
+        completion_tokens: (um.candidatesTokenCount ?? 0) + (um.thoughtsTokenCount ?? 0),
+        total_tokens: um.totalTokenCount ?? 0,
+        ...(um.cachedContentTokenCount ? { prompt_tokens_details: { cached_tokens: um.cachedContentTokenCount } } : {})
+      }
+    }
+    for (const p of obj.candidates?.[0]?.content?.parts || []) {
+      if (p.text && deltaText.length < DELTA_CAP) deltaText += p.text
+    }
+  }
+
   // 把一行上游 SSE 处理成「要写给客户端的内容」
   const handleLine = line => {
     if (rawPassthrough) {
       // 字节已经原样写过了,这里只做统计
       const obj = parseData(line)
-      if (io.passthrough) scanAnthropic(obj)
+      if (io.passthrough && channel.type === 'anthropic') scanAnthropic(obj)
+      else if (io.passthrough && channel.type === 'gemini') scanGemini(obj)
       else scanOpenAI(obj)
       return ''
     }
     if (nativeUpstream) {
       const text = transformer.feed(line)
       if (!text) return ''
-      if (!toAnthropic) return text
-      // transformer 产出的是 OpenAI SSE 文本,再编码成 Anthropic 事件
+      if (!reencode) return text
+      // transformer 产出的是 OpenAI SSE 文本,再编码成入站协议的事件
       let out = ''
       for (const l of text.split(/\r?\n/)) {
         const obj = parseData(l.trim())
@@ -600,7 +687,7 @@ async function relayStream(req, res, upstream, channel, model, body, start, rese
       }
       return out
     }
-    // 上游是 OpenAI,入站是 Anthropic
+    // 上游是 OpenAI,入站是别的协议
     const obj = parseData(line)
     if (!obj) return ''
     scanOpenAI(obj)
@@ -632,7 +719,7 @@ async function relayStream(req, res, upstream, channel, model, body, start, rese
     if (out) res.write(out)
   }
   if (!clientGone && !rawPassthrough) {
-    if (toAnthropic) res.write(encoder.finish())
+    if (reencode) res.write(encoder.finish())
     else if (nativeUpstream) res.write(transformer.finish())
   }
   res.end()

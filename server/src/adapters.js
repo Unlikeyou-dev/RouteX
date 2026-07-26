@@ -471,6 +471,22 @@ export function buildAnthropicPassthrough(channel, apiKey, body, upstreamModel, 
   }
 }
 
+// Gemini 透传:结构本身不用动,只换模型名并补上输出上限(预扣费需要真上界)
+export function buildGeminiPassthrough(channel, apiKey, body, upstreamModel, isStream, outputCap) {
+  const payload = { ...body }
+  const gc = { ...(payload.generationConfig || payload.generation_config || {}) }
+  if (!gc.maxOutputTokens && outputCap > 0) gc.maxOutputTokens = outputCap
+  payload.generationConfig = gc
+  delete payload.generation_config
+
+  const method = isStream ? 'streamGenerateContent?alt=sse' : 'generateContent'
+  return {
+    url: `${channelBaseUrl(channel)}/v1beta/models/${upstreamModel}:${method}`,
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+    payload
+  }
+}
+
 // 透传时消息内容可能是字符串,缓存断点只能挂在块上 —— 统一成块数组
 function normalizedForCache(messages) {
   return (messages || []).map(m => ({
