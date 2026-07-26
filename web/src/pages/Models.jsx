@@ -22,9 +22,10 @@ export default function Models() {
     input: r.base_input_price ?? r.input_price,
     output: r.base_output_price ?? r.output_price,
     cacheRead: r.cache_read_ratio ?? '',
-    cacheWrite: r.cache_write_ratio ?? ''
+    cacheWrite: r.cache_write_ratio ?? '',
+    rpm: r.rpm_per_user || 0
   })
-  const openCreate = () => setModal({ model: '', isNew: true, input: 1, output: 2, cacheRead: '', cacheWrite: '' })
+  const openCreate = () => setModal({ model: '', isNew: true, input: 1, output: 2, cacheRead: '', cacheWrite: '', rpm: 0 })
 
   const submit = async () => {
     if (!modal.model.trim()) return toast('请填写模型名', 'error')
@@ -37,7 +38,8 @@ export default function Models() {
           input_price: Number(modal.input),
           output_price: Number(modal.output),
           cache_read_ratio: modal.cacheRead,
-          cache_write_ratio: modal.cacheWrite
+          cache_write_ratio: modal.cacheWrite,
+          rpm_per_user: modal.rpm
         }
       })
       toast('定价已保存', 'success')
@@ -263,6 +265,22 @@ export default function Models() {
                 onChange={e => setModal(m => ({ ...m, cacheWrite: e.target.value }))}
               />
             </div>
+          </div>
+          <div>
+            <label className="label">单用户每分钟请求上限</label>
+            <input
+              className="input text-right tabular-nums"
+              type="number"
+              step="1"
+              min="0"
+              placeholder="0 = 跟随站点默认"
+              value={modal?.rpm ?? 0}
+              onChange={e => setModal(m => ({ ...m, rpm: e.target.value }))}
+            />
+            <p className="mt-1.5 text-xs leading-5 text-ink-mute">
+              按「用户 + 这个模型」计数。令牌级限频拦不住一个用户开十把令牌,
+              贵模型的上游配额还是会被一个人打满,所以贵模型建议单独卡一道。
+            </p>
           </div>
           <p className="text-xs leading-5 text-ink-mute">
             这里填基础价;用户实际看到的价格会再乘以站点倍率与其分组倍率。

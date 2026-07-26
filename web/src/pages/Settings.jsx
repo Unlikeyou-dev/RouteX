@@ -310,6 +310,21 @@ export default function Settings() {
                 />
               </div>
             </div>
+            <div>
+              <label className="label">单用户单模型每分钟请求上限</label>
+              <input
+                className="input"
+                type="number"
+                step="1"
+                min="0"
+                value={form.model_rate_limit_per_min}
+                onChange={set('model_rate_limit_per_min')}
+              />
+              <p className="mt-1.5 text-xs leading-5 text-ink-mute">
+                所有模型的默认值,0 = 不限。上面的令牌限频拦不住一个用户开十把令牌,
+                这一道按「用户 + 模型」计数;贵模型可以在价目页单独设更严的值覆盖这里。
+              </p>
+            </div>
             <div className="flex items-center justify-between rounded-xl border border-line bg-panel px-4 py-3">
               <div>
                 <div className="text-sm font-medium">Anthropic 自动缓存</div>

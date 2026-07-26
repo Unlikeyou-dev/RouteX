@@ -14,8 +14,8 @@ const ADMIN_KEYS = [
   'pay_qr_alipay', 'pay_qr_wechat', 'cny_rate', 'topup_min', 'bark_key', 'bark_server',
   // 风控
   'precharge_completion_tokens', 'precharge_thinking_tokens', 'precharge_margin',
-  'max_concurrent_per_user', 'relay_rate_limit_per_min', 'relay_retry_channels',
-  'anthropic_auto_cache', 'cors_origins',
+  'max_concurrent_per_user', 'relay_rate_limit_per_min', 'model_rate_limit_per_min',
+  'relay_retry_channels', 'anthropic_auto_cache', 'cors_origins',
   // 运维
   'log_retention_days', 'backup_enabled', 'backup_keep',
   'health_check_enabled', 'health_check_mode', 'health_sweep_minutes'
@@ -36,7 +36,8 @@ const NUMERIC_KEYS = [
   'price_ratio', 'signup_bonus', 'aff_rebate_percent', 'cny_rate', 'topup_min',
   'cache_read_ratio', 'cache_write_ratio',
   'precharge_completion_tokens', 'precharge_thinking_tokens', 'precharge_margin',
-  'max_concurrent_per_user', 'relay_rate_limit_per_min', 'relay_retry_channels', 'log_retention_days',
+  'max_concurrent_per_user', 'relay_rate_limit_per_min', 'model_rate_limit_per_min',
+  'relay_retry_channels', 'log_retention_days',
   'backup_keep', 'health_sweep_minutes'
 ]
 // 收款码允许 http(s) 图片地址或 data URI(前端本地选图后转 base64,省掉一套上传接口)

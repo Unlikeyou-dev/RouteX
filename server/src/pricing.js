@@ -75,9 +75,20 @@ function priceOf(row, source, matched) {
     cacheWrite: row.input_price * writeRatio,
     cache_read_ratio: row.cache_read_ratio,
     cache_write_ratio: row.cache_write_ratio,
+    rpm_per_user: row.rpm_per_user || 0,
     source,
     matched
   }
+}
+
+// 「单用户 + 单模型」每分钟上限:模型自己设了就用自己的,没设回落站点默认。
+// 匹配口径和查价一致(精确 → 前缀),免得同一个模型名在两处落到不同的行上。
+export function modelRateLimit(model) {
+  const row = db.prepare('SELECT rpm_per_user FROM model_prices WHERE model = ?').get(model)
+    || db.prepare("SELECT rpm_per_user FROM model_prices WHERE ? LIKE model || '%' ORDER BY LENGTH(model) DESC LIMIT 1").get(model)
+  const own = Number(row?.rpm_per_user) || 0
+  if (own > 0) return own
+  return Number(getSetting('model_rate_limit_per_min', '0')) || 0
 }
 
 export function getPrice(model) {

@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { encode } from 'gpt-tokenizer'
 import { db, now, getSetting } from './db.js'
-import { computeCost } from './pricing.js'
+import { computeCost, modelRateLimit } from './pricing.js'
 import { RELAY_TIMEOUT_MS } from './config.js'
 import {
   buildUpstreamRequest, convertResponse, createStreamTransformer, wantsThinking,
@@ -329,6 +329,13 @@ const markFormat = format => (req, res, next) => { req.inFormat = format; next()
 async function guarded(req, res, run) {
   if (!consumeRelayQuota(`t${req.relayToken.id}`, 60_000, relayRateLimit())) {
     return fail(req, res, 429, `请求过于频繁,该令牌每分钟最多 ${relayRateLimit()} 次`, 'rate_limit_exceeded')
+  }
+  // 令牌级限频拦不住「一个用户开十把令牌」,所以贵模型还要按「用户 + 模型」再卡一道。
+  // 用请求里写的模型名而不是映射后的上游名 —— 用户是按自己写的那个名字被限的
+  const model = String(req.canonicalBody?.model || '').trim()
+  const modelLimit = model ? modelRateLimit(model) : 0
+  if (modelLimit > 0 && !consumeRelayQuota(`u${req.relayUser.id}:${model}`, 60_000, modelLimit)) {
+    return fail(req, res, 429, `模型 ${model} 每分钟最多 ${modelLimit} 次,请稍后重试`, 'rate_limit_exceeded')
   }
   if (!acquireSlot(req.relayUser.id)) {
     return fail(req, res, 429, `并发请求数已达上限(${maxConcurrent()}),请稍后重试`, 'too_many_requests')

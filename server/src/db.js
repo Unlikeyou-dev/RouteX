@@ -150,6 +150,9 @@ ensureColumn('logs', 'reasoning_tokens', 'reasoning_tokens INTEGER NOT NULL DEFA
 // 留空则回落到站点默认
 ensureColumn('model_prices', 'cache_read_ratio', 'cache_read_ratio REAL')
 ensureColumn('model_prices', 'cache_write_ratio', 'cache_write_ratio REAL')
+// 单用户对该模型每分钟的请求上限(0 = 用站点默认)。
+// 令牌级限频拦不住「一个用户开十把令牌」,贵模型的上游配额还是会被一个人打满。
+ensureColumn('model_prices', 'rpm_per_user', 'rpm_per_user INTEGER NOT NULL DEFAULT 0')
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_topups_order_no ON topups(order_no)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_topups_status ON topups(status, id)')
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite ON users(invite_code)')
@@ -230,6 +233,9 @@ const defaultSettings = {
   max_concurrent_per_user: '10',
   // 单令牌每分钟请求上限,0 = 不限
   relay_rate_limit_per_min: '0',
+  // 「单用户 + 单模型」每分钟请求上限的站点默认值,0 = 不限;
+  // 价目表里可给单个模型单独设,只卡贵模型
+  model_rate_limit_per_min: '0',
   // 单次请求最多尝试几个渠道(故障转移次数)
   relay_retry_channels: '3',
   // 渠道巡检:models 用免费的模型列表接口探活,chat 发真实请求(会产生费用)

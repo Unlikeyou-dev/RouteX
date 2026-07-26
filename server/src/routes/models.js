@@ -51,6 +51,7 @@ router.get('/', authRequired, (req, res) => {
             base_output_price: p.output,
             cache_read_ratio: p.cache_read_ratio,
             cache_write_ratio: p.cache_write_ratio,
+            rpm_per_user: p.rpm_per_user || 0,
             priced: p.source !== 'fallback',
             price_source: p.source,
             matched_price_rule: p.matched,
@@ -91,19 +92,23 @@ const optionalRatio = v => {
 }
 
 router.put('/price', authRequired, adminRequired, (req, res) => {
-  const { model, input_price, output_price, cache_read_ratio, cache_write_ratio } = req.body || {}
+  const {
+    model, input_price, output_price, cache_read_ratio, cache_write_ratio, rpm_per_user
+  } = req.body || {}
   if (!model) return res.status(400).json({ success: false, message: '缺少模型名' })
+  const rpm = Math.max(0, Math.floor(Number(rpm_per_user) || 0))
   db.prepare(
-    `INSERT INTO model_prices (model, input_price, output_price, cache_read_ratio, cache_write_ratio)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO model_prices (model, input_price, output_price, cache_read_ratio, cache_write_ratio, rpm_per_user)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(model) DO UPDATE SET
        input_price = excluded.input_price,
        output_price = excluded.output_price,
        cache_read_ratio = excluded.cache_read_ratio,
-       cache_write_ratio = excluded.cache_write_ratio`
+       cache_write_ratio = excluded.cache_write_ratio,
+       rpm_per_user = excluded.rpm_per_user`
   ).run(
     model, Number(input_price) || 0, Number(output_price) || 0,
-    optionalRatio(cache_read_ratio), optionalRatio(cache_write_ratio)
+    optionalRatio(cache_read_ratio), optionalRatio(cache_write_ratio), rpm
   )
   res.json({ success: true })
 })
