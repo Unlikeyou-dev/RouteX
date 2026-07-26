@@ -2,11 +2,16 @@ import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import { db, now, getSetting } from '../db.js'
 import { signToken, publicUser } from '../middleware/auth.js'
+import { rateLimit } from '../middleware/ratelimit.js'
 import { badRequest } from '../util.js'
 
 const router = Router()
 
-router.post('/register', (req, res) => {
+// 防刷注册(薅注册赠送额度)/ 防密码爆破
+const registerLimit = rateLimit({ windowMs: 3_600_000, max: 5, prefix: 'register' })
+const loginLimit = rateLimit({ windowMs: 300_000, max: 10, prefix: 'login' })
+
+router.post('/register', registerLimit, (req, res) => {
   const { username, password, email } = req.body || {}
   if (!username || !/^[\w-]{3,30}$/.test(username)) return badRequest(res, '用户名需为 3-30 位字母、数字、下划线')
   if (!password || password.length < 6) return badRequest(res, '密码至少 6 位')
@@ -20,7 +25,7 @@ router.post('/register', (req, res) => {
   res.json({ success: true, data: { token: signToken(user), user: publicUser(user) } })
 })
 
-router.post('/login', (req, res) => {
+router.post('/login', loginLimit, (req, res) => {
   const { username, password } = req.body || {}
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username || '')
   if (!user || !bcrypt.compareSync(password || '', user.password_hash)) {

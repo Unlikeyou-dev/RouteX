@@ -21,6 +21,13 @@ import relayRoutes from './relay.js'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 
+app.disable('x-powered-by')
+app.use((req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff')
+  res.set('X-Frame-Options', 'DENY')
+  res.set('Referrer-Policy', 'no-referrer')
+  next()
+})
 app.use(cors())
 app.use(express.json({ limit: '32mb' }))
 

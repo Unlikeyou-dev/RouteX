@@ -59,7 +59,7 @@ console.log(resp.choices[0].message.content);`
         <div className="card p-6">
           <h3 className="mb-3 font-semibold">接口地址</h3>
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="rounded-lg border border-line bg-panel px-3 py-1.5 font-mono text-[13px] text-cyan-400">
+            <span className="rounded-lg border border-line bg-panel px-3 py-1.5 font-mono text-[13px] text-brand-600">
               {base}/v1
             </span>
             <CopyButton text={`${base}/v1`} />
@@ -85,8 +85,8 @@ console.log(resp.choices[0].message.content);`
         <div className="card p-6 text-sm leading-relaxed text-ink-dim">
           <h3 className="mb-3 font-semibold text-ink">常见问题</h3>
           <ul className="list-disc space-y-2 pl-5">
-            <li>流式输出:请求体中设置 <code className="font-mono text-cyan-400">"stream": true</code> 即可,与 OpenAI 行为一致。</li>
-            <li>可用模型列表:调用 <code className="font-mono text-cyan-400">GET /v1/models</code>,或查看「模型价格」页面。</li>
+            <li>流式输出:请求体中设置 <code className="font-mono text-brand-600">"stream": true</code> 即可,与 OpenAI 行为一致。</li>
+            <li>可用模型列表:调用 <code className="font-mono text-brand-600">GET /v1/models</code>,或查看「模型价格」页面。</li>
             <li>返回 429 表示余额或令牌额度不足,请前往「钱包充值」。</li>
             <li>密钥泄露:在「API 令牌」页面禁用或删除对应令牌即可,即时生效。</li>
           </ul>

@@ -30,10 +30,10 @@ function NavItem({ to, icon: Icon, label, end }) {
       to={to}
       end={end}
       className={({ isActive }) =>
-        `group flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition ${
+        `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
           isActive
-            ? 'bg-gradient-to-r from-brand-600/25 to-glow/10 text-white shadow-[inset_0_0_0_1px_rgba(129,140,248,0.25)]'
-            : 'text-ink-dim hover:bg-white/[0.05] hover:text-ink'
+            ? 'bg-brand-50 text-brand-700'
+            : 'text-ink-dim hover:bg-panel hover:text-ink'
         }`
       }
     >
@@ -55,26 +55,20 @@ export default function ConsoleLayout() {
 
   return (
     <div className="flex min-h-screen bg-bg">
-      {/* 背景光晕 */}
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -top-40 left-1/3 h-96 w-96 rounded-full bg-brand-600/10 blur-[120px]" />
-        <div className="absolute bottom-0 right-0 h-80 w-80 rounded-full bg-glow/10 blur-[120px]" />
-      </div>
-
       {/* 侧边栏 */}
-      <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-line bg-panel/80 backdrop-blur-xl">
+      <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-line bg-card">
         <div className="flex h-16 items-center px-5">
           <NavLink to="/">
             <Logo size={30} />
           </NavLink>
         </div>
-        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3">
           {userNav.map(item => (
             <NavItem key={item.to} {...item} />
           ))}
           {user.role === 'admin' && (
             <>
-              <div className="flex items-center gap-2 px-3.5 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-widest text-ink-mute">
+              <div className="flex items-center gap-2 px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-widest text-ink-mute">
                 <ShieldCheck size={12} /> 管理
               </div>
               {adminNav.map(item => (
@@ -84,8 +78,8 @@ export default function ConsoleLayout() {
           )}
         </nav>
         <div className="border-t border-line p-3">
-          <div className="flex items-center gap-3 rounded-xl px-2 py-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-glow text-sm font-bold text-white">
+          <div className="flex items-center gap-3 rounded-lg px-2 py-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">
               {user.username.slice(0, 1).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
@@ -93,7 +87,7 @@ export default function ConsoleLayout() {
               <div className="text-xs text-ink-mute">{user.role === 'admin' ? '管理员' : '普通用户'}</div>
             </div>
             <button
-              className="rounded-lg p-2 text-ink-mute transition hover:bg-white/5 hover:text-bad"
+              className="rounded-lg p-2 text-ink-mute transition-colors hover:bg-panel hover:text-bad"
               title="退出登录"
               onClick={() => {
                 logout()
@@ -108,13 +102,16 @@ export default function ConsoleLayout() {
 
       {/* 主区域 */}
       <div className="ml-60 flex-1">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-end gap-3 border-b border-line bg-bg/70 px-6 backdrop-blur-xl">
-          <NavLink to="/console/wallet" className="chip border border-line bg-card/60 !px-3 !py-1.5 text-ink-dim hover:text-ink">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-end gap-3 border-b border-line bg-card/90 px-6 backdrop-blur">
+          <NavLink
+            to="/console/wallet"
+            className="chip border border-line bg-card !px-3 !py-1.5 text-ink-dim shadow-card transition-colors hover:bg-panel hover:text-ink"
+          >
             余额
-            <span className="font-semibold text-ok">{fmtUSD(user.quota, 2)}</span>
+            <span className="font-semibold text-ink">{fmtUSD(user.quota, 2)}</span>
           </NavLink>
         </header>
-        <main className="relative mx-auto max-w-6xl px-6 py-8">
+        <main className="mx-auto max-w-6xl px-6 py-8">
           <Outlet />
         </main>
       </div>

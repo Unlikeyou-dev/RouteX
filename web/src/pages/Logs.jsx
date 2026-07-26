@@ -90,7 +90,7 @@ export default function Logs() {
               </thead>
               <tbody className="divide-y divide-line/60">
                 {data.rows.map(l => (
-                  <tr key={l.id} className="transition hover:bg-white/[0.02]">
+                  <tr key={l.id} className="transition hover:bg-panel/60">
                     <td className="td">{fmtTime(l.created_at)}</td>
                     {isAdmin && scope === 'all' && <td className="td">{l.username || '—'}</td>}
                     <td className="td">{l.token_name || '—'}</td>
@@ -103,9 +103,9 @@ export default function Logs() {
                     <td className="td">{l.latency_ms}ms</td>
                     <td className="td">
                       {l.status === 'success' ? (
-                        <span className="chip bg-ok/10 text-ok">成功{l.stream ? ' · 流式' : ''}</span>
+                        <span className="chip bg-okbg text-ok">成功{l.stream ? ' · 流式' : ''}</span>
                       ) : (
-                        <span className="chip bg-bad/10 text-bad" title={l.error || ''}>失败</span>
+                        <span className="chip bg-badbg text-bad" title={l.error || ''}>失败</span>
                       )}
                     </td>
                   </tr>

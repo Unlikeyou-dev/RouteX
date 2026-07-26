@@ -42,7 +42,7 @@ export default function Models() {
               </thead>
               <tbody className="divide-y divide-line/60">
                 {filtered.map(r => (
-                  <tr key={r.model} className="transition hover:bg-white/[0.02]">
+                  <tr key={r.model} className="transition hover:bg-panel/60">
                     <td className="td font-mono text-[13px] text-ink">{r.model}</td>
                     <td className="td">${r.input_price.toFixed(2)}</td>
                     <td className="td">${r.output_price.toFixed(2)}</td>

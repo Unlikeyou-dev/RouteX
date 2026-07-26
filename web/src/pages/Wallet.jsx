@@ -56,8 +56,7 @@ export default function Wallet() {
       <PageHeader title="钱包充值" desc="通过在线支付或兑换码为账户充值。" />
 
       {/* 余额卡 */}
-      <div className="card relative overflow-hidden p-7">
-        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-brand-600/20 blur-[70px]" />
+      <div className="card p-7">
         <div className="flex items-center gap-3 text-ink-mute">
           <WalletIcon size={17} />
           <span className="text-sm">当前余额</span>
@@ -80,8 +79,8 @@ export default function Wallet() {
                 onClick={() => setAmount(a)}
                 className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${
                   amount === a
-                    ? 'border-brand-500/60 bg-brand-600/20 text-white'
-                    : 'border-line bg-panel text-ink-dim hover:border-brand-500/30'
+                    ? 'border-brand-600 bg-brand-50 text-brand-700'
+                    : 'border-line bg-card text-ink-dim hover:border-brand-300'
                 }`}
               >
                 ${a}
@@ -95,8 +94,8 @@ export default function Wallet() {
                 onClick={() => setMethod(mth.key)}
                 className={`flex-1 rounded-xl border px-3 py-2.5 text-sm transition ${
                   method === mth.key
-                    ? 'border-brand-500/60 bg-brand-600/20 text-white'
-                    : 'border-line bg-panel text-ink-dim hover:border-brand-500/30'
+                    ? 'border-brand-600 bg-brand-50 text-brand-700'
+                    : 'border-line bg-card text-ink-dim hover:border-brand-300'
                 }`}
               >
                 {mth.label}
@@ -135,7 +134,7 @@ export default function Wallet() {
                 <div key={o.id} className="flex items-center justify-between rounded-xl border border-line bg-panel px-3.5 py-2.5 text-sm">
                   <span className="text-ink-mute">{fmtTime(o.created_at)}</span>
                   <span className="font-medium">{fmtUSD(o.amount, 2)}</span>
-                  <span className={`chip ${o.status === 'paid' ? 'bg-ok/10 text-ok' : 'bg-warn/10 text-warn'}`}>
+                  <span className={`chip ${o.status === 'paid' ? 'bg-okbg text-ok' : 'bg-warnbg text-warn'}`}>
                     {o.status === 'paid' ? '已到账' : '待支付'}
                   </span>
                 </div>
@@ -147,7 +146,7 @@ export default function Wallet() {
 
       <Modal open={!!pending} onClose={() => setPending(null)} title="订单已创建">
         <div className="space-y-4 text-sm text-ink-dim">
-          <div className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-warn">
+          <div className="rounded-xl border border-amber-200 bg-warnbg px-4 py-3 text-warn">
             {pending?.message}
           </div>
           <p>

@@ -4,51 +4,49 @@
 
 @layer base {
   html {
-    color-scheme: dark;
+    color-scheme: light;
   }
   body {
     @apply bg-bg text-ink antialiased;
-    font-feature-settings: 'cv02', 'cv03';
   }
   ::selection {
-    @apply bg-brand-600/60 text-white;
+    @apply bg-brand-100 text-brand-700;
   }
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+    scrollbar-color: #d3d7de transparent;
   }
   *::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
   *::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.14);
+    background: #d3d7de;
     border-radius: 8px;
   }
 }
 
 @layer components {
   .card {
-    @apply rounded-2xl border border-line bg-card/80 shadow-card backdrop-blur;
+    @apply rounded-xl border border-line bg-card shadow-card;
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium
-      transition-all duration-150 select-none disabled:opacity-50 disabled:pointer-events-none;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
+      transition-colors duration-150 select-none disabled:opacity-50 disabled:pointer-events-none;
   }
   .btn-primary {
-    @apply btn text-white bg-gradient-to-r from-brand-600 to-glow
-      hover:brightness-110 hover:shadow-glowsm active:scale-[0.98];
+    @apply btn bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-700;
   }
   .btn-ghost {
-    @apply btn border border-line bg-white/[0.03] text-ink-dim hover:text-ink hover:bg-white/[0.07];
+    @apply btn border border-line bg-card text-ink-dim hover:bg-panel hover:text-ink;
   }
   .btn-danger {
-    @apply btn border border-bad/30 bg-bad/10 text-bad hover:bg-bad/20;
+    @apply btn border border-red-200 bg-badbg text-bad hover:bg-red-100;
   }
   .input {
-    @apply w-full rounded-xl border border-line bg-panel px-3.5 py-2.5 text-sm text-ink
+    @apply w-full rounded-lg border border-line bg-card px-3.5 py-2.5 text-sm text-ink
       placeholder:text-ink-mute outline-none transition
-      focus:border-brand-500/60 focus:ring-2 focus:ring-brand-500/20;
+      focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20;
   }
   .label {
     @apply mb-1.5 block text-[13px] font-medium text-ink-dim;
@@ -62,13 +60,4 @@
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
-}
-
-/* 落地页网格背景 */
-.hero-grid {
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: radial-gradient(ellipse 90% 65% at 50% 0%, #000 55%, transparent 100%);
 }

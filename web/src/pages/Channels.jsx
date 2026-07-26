@@ -120,7 +120,7 @@ export default function Channels() {
                 {rows.map(row => {
                   const modelCount = row.models.split(',').filter(m => m.trim()).length
                   return (
-                    <tr key={row.id} className="transition hover:bg-white/[0.02]">
+                    <tr key={row.id} className="transition hover:bg-panel/60">
                       <td className="td font-medium text-ink">{row.name}</td>
                       <td className="td max-w-[220px] truncate font-mono text-[13px]">{row.base_url}</td>
                       <td className="td">{modelCount}</td>
@@ -141,17 +141,17 @@ export default function Channels() {
                       </td>
                       <td className="td text-right">
                         <button
-                          className="rounded-lg p-2 text-ink-mute hover:bg-white/5 hover:text-brand-300"
+                          className="rounded-lg p-2 text-ink-mute hover:bg-panel hover:text-brand-600"
                           title="测试连通性"
                           onClick={() => test(row)}
                           disabled={testing[row.id]}
                         >
                           {testing[row.id] ? <Loader2 size={15} className="animate-spin" /> : <PlugZap size={15} />}
                         </button>
-                        <button className="rounded-lg p-2 text-ink-mute hover:bg-white/5 hover:text-ink" onClick={() => openEdit(row)}>
+                        <button className="rounded-lg p-2 text-ink-mute hover:bg-panel hover:text-ink" onClick={() => openEdit(row)}>
                           <Pencil size={15} />
                         </button>
-                        <button className="rounded-lg p-2 text-ink-mute hover:bg-white/5 hover:text-bad" onClick={() => remove(row)}>
+                        <button className="rounded-lg p-2 text-ink-mute hover:bg-panel hover:text-bad" onClick={() => remove(row)}>
                           <Trash2 size={15} />
                         </button>
                       </td>

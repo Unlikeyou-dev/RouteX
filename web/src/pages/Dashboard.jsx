@@ -15,7 +15,7 @@ function StatCard({ icon: Icon, label, value, sub }) {
     <div className="card p-5">
       <div className="flex items-center justify-between">
         <span className="text-[13px] font-medium text-ink-mute">{label}</span>
-        <span className="rounded-lg bg-brand-600/15 p-2 text-brand-300">
+        <span className="rounded-lg bg-brand-50 p-2 text-brand-600">
           <Icon size={16} />
         </span>
       </div>
@@ -60,7 +60,7 @@ export default function Dashboard() {
                   key={x.key}
                   onClick={() => setMetric(x.key)}
                   className={`rounded-lg px-3 py-1 text-xs font-medium transition ${
-                    metric === x.key ? 'bg-brand-600/30 text-white' : 'text-ink-mute hover:text-ink'
+                    metric === x.key ? 'bg-card text-ink shadow-card' : 'text-ink-mute hover:text-ink'
                   }`}
                 >
                   {x.label}
@@ -100,7 +100,7 @@ export default function Dashboard() {
               </thead>
               <tbody className="divide-y divide-line/60">
                 {recent.map(l => (
-                  <tr key={l.id} className="transition hover:bg-white/[0.02]">
+                  <tr key={l.id} className="transition hover:bg-panel/60">
                     <td className="td">{fmtTime(l.created_at)}</td>
                     <td className="td font-mono text-[13px] text-ink">{l.model}</td>
                     <td className="td">{fmtNum(l.total_tokens)}</td>
@@ -108,9 +108,9 @@ export default function Dashboard() {
                     <td className="td">{l.latency_ms}ms</td>
                     <td className="td">
                       {l.status === 'success' ? (
-                        <span className="chip bg-ok/10 text-ok">成功</span>
+                        <span className="chip bg-okbg text-ok">成功</span>
                       ) : (
-                        <span className="chip bg-bad/10 text-bad">失败</span>
+                        <span className="chip bg-badbg text-bad">失败</span>
                       )}
                     </td>
                   </tr>

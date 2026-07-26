@@ -98,7 +98,7 @@ export default function Tokens() {
               </thead>
               <tbody className="divide-y divide-line/60">
                 {rows.map(row => (
-                  <tr key={row.id} className="transition hover:bg-white/[0.02]">
+                  <tr key={row.id} className="transition hover:bg-panel/60">
                     <td className="td font-medium text-ink">{row.name}</td>
                     <td className="td">
                       <span className="inline-flex items-center gap-1 font-mono text-[13px]">
@@ -121,10 +121,10 @@ export default function Tokens() {
                       </button>
                     </td>
                     <td className="td text-right">
-                      <button className="rounded-lg p-2 text-ink-mute hover:bg-white/5 hover:text-ink" onClick={() => openEdit(row)}>
+                      <button className="rounded-lg p-2 text-ink-mute hover:bg-panel hover:text-ink" onClick={() => openEdit(row)}>
                         <Pencil size={15} />
                       </button>
-                      <button className="rounded-lg p-2 text-ink-mute hover:bg-white/5 hover:text-bad" onClick={() => remove(row)}>
+                      <button className="rounded-lg p-2 text-ink-mute hover:bg-panel hover:text-bad" onClick={() => remove(row)}>
                         <Trash2 size={15} />
                       </button>
                     </td>

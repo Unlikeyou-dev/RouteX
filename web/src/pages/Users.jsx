@@ -77,14 +77,14 @@ export default function Users() {
               </thead>
               <tbody className="divide-y divide-line/60">
                 {rows.map(row => (
-                  <tr key={row.id} className="transition hover:bg-white/[0.02]">
+                  <tr key={row.id} className="transition hover:bg-panel/60">
                     <td className="td">{row.id}</td>
                     <td className="td font-medium text-ink">{row.username}</td>
                     <td className="td">
                       {row.role === 'admin' ? (
-                        <span className="chip bg-brand-600/15 text-brand-300">管理员</span>
+                        <span className="chip bg-brand-50 text-brand-700">管理员</span>
                       ) : (
-                        <span className="chip bg-white/5 text-ink-dim">用户</span>
+                        <span className="chip bg-panel text-ink-dim">用户</span>
                       )}
                     </td>
                     <td className="td">{fmtUSD(row.quota, 2)}</td>
@@ -97,10 +97,10 @@ export default function Users() {
                       </button>
                     </td>
                     <td className="td text-right">
-                      <button className="rounded-lg p-2 text-ink-mute hover:bg-white/5 hover:text-ink" onClick={() => openEdit(row)}>
+                      <button className="rounded-lg p-2 text-ink-mute hover:bg-panel hover:text-ink" onClick={() => openEdit(row)}>
                         <Pencil size={15} />
                       </button>
-                      <button className="rounded-lg p-2 text-ink-mute hover:bg-white/5 hover:text-bad" onClick={() => remove(row)}>
+                      <button className="rounded-lg p-2 text-ink-mute hover:bg-panel hover:text-bad" onClick={() => remove(row)}>
                         <Trash2 size={15} />
                       </button>
                     </td>

@@ -11,11 +11,11 @@ export function Modal({ open, onClose, title, children, width = 'max-w-lg' }) {
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className={`card relative w-full ${width} animate-fade-up p-6`}>
+      <div className="absolute inset-0 bg-ink/30" onClick={onClose} />
+      <div className={`relative w-full ${width} animate-fade-up rounded-xl border border-line bg-card p-6 shadow-modal`}>
         <div className="mb-5 flex items-center justify-between">
           <h3 className="text-base font-semibold">{title}</h3>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-ink-mute hover:bg-white/5 hover:text-ink">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-ink-mute transition-colors hover:bg-panel hover:text-ink">
             <X size={18} />
           </button>
         </div>
@@ -38,14 +38,14 @@ export function Toaster() {
   const icons = {
     success: <CircleCheck size={16} className="text-ok" />,
     error: <CircleAlert size={16} className="text-bad" />,
-    info: <Info size={16} className="text-brand-400" />
+    info: <Info size={16} className="text-brand-600" />
   }
   return (
     <div className="pointer-events-none fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2">
       {items.map(t => (
         <div
           key={t.id}
-          className="card pointer-events-auto flex items-center gap-2.5 px-4 py-2.5 text-sm animate-fade-up"
+          className="pointer-events-auto flex animate-fade-up items-center gap-2.5 rounded-xl border border-line bg-card px-4 py-2.5 text-sm shadow-pop"
         >
           {icons[t.type] || icons.info}
           <span>{t.message}</span>
@@ -57,11 +57,11 @@ export function Toaster() {
 
 export function StatusChip({ ok, onText = '启用', offText = '禁用' }) {
   return ok ? (
-    <span className="chip bg-ok/10 text-ok">
+    <span className="chip bg-okbg text-ok">
       <span className="h-1.5 w-1.5 rounded-full bg-ok" /> {onText}
     </span>
   ) : (
-    <span className="chip bg-white/5 text-ink-mute">
+    <span className="chip bg-panel text-ink-mute">
       <span className="h-1.5 w-1.5 rounded-full bg-ink-mute" /> {offText}
     </span>
   )
@@ -71,7 +71,7 @@ export function CopyButton({ text, className = '' }) {
   const [copied, setCopied] = useState(false)
   return (
     <button
-      className={`rounded-lg p-1.5 text-ink-mute transition hover:bg-white/5 hover:text-ink ${className}`}
+      className={`rounded-lg p-1.5 text-ink-mute transition-colors hover:bg-panel hover:text-ink ${className}`}
       title="复制"
       onClick={async () => {
         try {
@@ -128,12 +128,12 @@ export function Switch({ checked, onChange }) {
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`relative h-5.5 h-6 w-11 rounded-full transition-colors ${
-        checked ? 'bg-brand-600' : 'bg-white/10'
+      className={`relative h-6 w-11 rounded-full transition-colors ${
+        checked ? 'bg-brand-600' : 'bg-line'
       }`}
     >
       <span
-        className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${
+        className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
           checked ? 'translate-x-6' : 'translate-x-1'
         }`}
       />

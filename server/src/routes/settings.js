@@ -18,7 +18,15 @@ router.get('/', authRequired, adminRequired, (req, res) => {
   res.json({ success: true, data })
 })
 
+const NUMERIC_KEYS = ['price_ratio', 'signup_bonus']
+
 router.put('/', authRequired, adminRequired, (req, res) => {
+  for (const key of NUMERIC_KEYS) {
+    const v = req.body?.[key]
+    if (v !== undefined && (!Number.isFinite(Number(v)) || Number(v) < 0)) {
+      return res.status(400).json({ success: false, message: `${key} 需为非负数字` })
+    }
+  }
   for (const key of ADMIN_KEYS) {
     if (req.body?.[key] !== undefined) setSetting(key, req.body[key])
   }

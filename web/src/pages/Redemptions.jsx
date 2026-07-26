@@ -67,7 +67,7 @@ export default function Redemptions() {
               </thead>
               <tbody className="divide-y divide-line/60">
                 {rows.map(row => (
-                  <tr key={row.id} className="transition hover:bg-white/[0.02]">
+                  <tr key={row.id} className="transition hover:bg-panel/60">
                     <td className="td">
                       <span className="inline-flex items-center gap-1 font-mono text-[13px] text-ink">
                         {row.code}
@@ -77,16 +77,16 @@ export default function Redemptions() {
                     <td className="td">{fmtUSD(row.amount, 2)}</td>
                     <td className="td">
                       {row.status === 'unused' ? (
-                        <span className="chip bg-ok/10 text-ok">未使用</span>
+                        <span className="chip bg-okbg text-ok">未使用</span>
                       ) : (
-                        <span className="chip bg-white/5 text-ink-mute">已使用</span>
+                        <span className="chip bg-panel text-ink-mute">已使用</span>
                       )}
                     </td>
                     <td className="td">{row.used_by_name || '—'}</td>
                     <td className="td">{fmtTime(row.created_at)}</td>
                     <td className="td text-right">
                       {row.status === 'unused' && (
-                        <button className="rounded-lg p-2 text-ink-mute hover:bg-white/5 hover:text-bad" onClick={() => remove(row)}>
+                        <button className="rounded-lg p-2 text-ink-mute hover:bg-panel hover:text-bad" onClick={() => remove(row)}>
                           <Trash2 size={15} />
                         </button>
                       )}

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import {
-  Zap, ShieldCheck, Coins, Waypoints, ArrowRight, Sparkles,
+  Zap, ShieldCheck, Coins, Waypoints, ArrowRight, Megaphone,
   Gauge, Blocks, TerminalSquare, ChevronRight
 } from 'lucide-react'
 import Logo from '../components/Logo.jsx'
@@ -56,53 +56,48 @@ export default function Landing() {
   }, [])
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-bg">
-      {/* 背景装饰 */}
-      <div className="hero-grid pointer-events-none absolute inset-x-0 top-0 h-[720px]" />
-      <div className="pointer-events-none absolute -top-48 left-1/2 h-[480px] w-[820px] -translate-x-1/2 rounded-full bg-brand-600/20 blur-[140px]" />
-      <div className="pointer-events-none absolute right-[-120px] top-[420px] h-72 w-72 rounded-full bg-glow/15 blur-[120px]" />
-
+    <div className="min-h-screen bg-card">
       {/* 导航 */}
-      <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
-        <Logo />
-        <nav className="hidden items-center gap-8 text-sm text-ink-dim md:flex">
-          <a href="#features" className="transition hover:text-ink">核心能力</a>
-          <a href="#models" className="transition hover:text-ink">支持模型</a>
-          <a href="#quickstart" className="transition hover:text-ink">快速接入</a>
-        </nav>
-        <div className="flex items-center gap-3">
-          {user ? (
-            <Link to="/console" className="btn-primary">
-              进入控制台 <ArrowRight size={15} />
-            </Link>
-          ) : (
-            <>
-              <Link to="/login" className="btn-ghost">登录</Link>
-              <Link to="/register" className="btn-primary">免费注册</Link>
-            </>
-          )}
+      <header className="sticky top-0 z-30 border-b border-line bg-card/90 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <Logo />
+          <nav className="hidden items-center gap-8 text-sm text-ink-dim md:flex">
+            <a href="#features" className="transition-colors hover:text-ink">核心能力</a>
+            <a href="#models" className="transition-colors hover:text-ink">支持模型</a>
+            <a href="#quickstart" className="transition-colors hover:text-ink">快速接入</a>
+          </nav>
+          <div className="flex items-center gap-3">
+            {user ? (
+              <Link to="/console" className="btn-primary">
+                进入控制台 <ArrowRight size={15} />
+              </Link>
+            ) : (
+              <>
+                <Link to="/login" className="btn-ghost">登录</Link>
+                <Link to="/register" className="btn-primary">免费注册</Link>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
       {/* Hero */}
-      <section className="relative z-10 mx-auto max-w-6xl px-6 pb-20 pt-16 text-center md:pt-24">
+      <section className="mx-auto max-w-6xl px-6 pb-24 pt-20 text-center md:pt-28">
         {site.announcement && (
-          <div className="mx-auto mb-8 inline-flex max-w-full items-center gap-2 rounded-full border border-brand-500/30 bg-brand-600/10 px-4 py-1.5 text-[13px] text-brand-300">
-            <Sparkles size={14} className="shrink-0" />
+          <div className="mx-auto mb-8 inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-panel px-4 py-1.5 text-[13px] text-ink-dim">
+            <Megaphone size={14} className="shrink-0 text-brand-600" />
             <span className="truncate">{site.announcement}</span>
           </div>
         )}
-        <h1 className="mx-auto max-w-3xl text-4xl font-extrabold leading-tight tracking-tight md:text-6xl">
+        <h1 className="mx-auto max-w-3xl text-4xl font-extrabold leading-tight tracking-tight md:text-[56px] md:leading-[1.15]">
           一个密钥,直连
-          <span className="bg-gradient-to-r from-brand-400 via-glow to-cyan-400 bg-clip-text text-transparent">
-            全球大模型
-          </span>
+          <span className="text-brand-600">全球大模型</span>
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-ink-dim md:text-lg">
           {site.site_name} 是新一代大模型 API 中转平台 —— 聚合 GPT、Claude、DeepSeek、Gemini 等主流模型,
           OpenAI 协议全兼容,更低价格、更高可用、按量计费。
         </p>
-        <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
+        <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
           <Link to={user ? '/console' : '/register'} className="btn-primary !px-6 !py-3 !text-base">
             立即开始 <ArrowRight size={17} />
           </Link>
@@ -111,21 +106,21 @@ export default function Landing() {
           </a>
         </div>
 
-        {/* 代码卡片 */}
-        <div id="quickstart" className="card mx-auto mt-16 max-w-2xl overflow-hidden text-left animate-fade-up">
-          <div className="flex items-center gap-1.5 border-b border-line px-4 py-3">
-            <span className="h-3 w-3 rounded-full bg-bad/70" />
-            <span className="h-3 w-3 rounded-full bg-warn/70" />
-            <span className="h-3 w-3 rounded-full bg-ok/70" />
-            <span className="ml-3 text-xs text-ink-mute">terminal — 30 秒接入</span>
+        {/* 代码卡片:浅色页面上的深色终端,保持专业对比 */}
+        <div id="quickstart" className="mx-auto mt-16 max-w-2xl overflow-hidden rounded-xl border border-line bg-[#16181d] text-left shadow-pop">
+          <div className="flex items-center gap-1.5 border-b border-white/10 px-4 py-3">
+            <span className="h-3 w-3 rounded-full bg-[#fc625d]" />
+            <span className="h-3 w-3 rounded-full bg-[#fdbc40]" />
+            <span className="h-3 w-3 rounded-full bg-[#34c749]" />
+            <span className="ml-3 text-xs text-white/40">terminal — 30 秒接入</span>
           </div>
-          <pre className="overflow-x-auto p-5 font-mono text-[13px] leading-relaxed text-ink-dim">
+          <pre className="overflow-x-auto p-5 font-mono text-[13px] leading-relaxed text-white/70">
             <code>
-{`curl `}<span className="text-cyan-400">{`${location.origin}/v1/chat/completions`}</span>{` \\
+{`curl `}<span className="text-sky-300">{`${location.origin}/v1/chat/completions`}</span>{` \\
   -H "Authorization: Bearer `}<span className="text-brand-300">sk-你的令牌</span>{`" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": `}<span className="text-ok">"gpt-4o"</span>{`,
+    "model": `}<span className="text-emerald-300">"gpt-4o"</span>{`,
     "messages": [{"role": "user", "content": "你好, RouteX!"}]
   }'`}
             </code>
@@ -134,36 +129,44 @@ export default function Landing() {
       </section>
 
       {/* 特性 */}
-      <section id="features" className="relative z-10 mx-auto max-w-6xl px-6 py-20">
-        <h2 className="text-center text-3xl font-bold tracking-tight">为分发而生的中转引擎</h2>
-        <p className="mx-auto mt-3 max-w-xl text-center text-ink-mute">
-          稳定压倒一切。渠道调度、计费、密钥管理,一站式全部搞定。
-        </p>
-        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map(f => (
-            <div key={f.title} className="card group p-6 transition hover:border-brand-500/40 hover:shadow-glowsm">
-              <div className="mb-4 inline-flex rounded-xl bg-gradient-to-br from-brand-600/25 to-glow/20 p-3 text-brand-300 transition group-hover:scale-110">
-                <f.icon size={22} />
+      <section id="features" className="border-t border-line bg-bg py-20">
+        <div className="mx-auto max-w-6xl px-6">
+          <h2 className="text-center text-3xl font-bold tracking-tight">为分发而生的中转引擎</h2>
+          <p className="mx-auto mt-3 max-w-xl text-center text-ink-mute">
+            稳定压倒一切。渠道调度、计费、密钥管理,一站式全部搞定。
+          </p>
+          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {FEATURES.map(f => (
+              <div key={f.title} className="card p-6 transition-shadow hover:shadow-pop">
+                <div className="mb-4 inline-flex rounded-lg bg-brand-50 p-3 text-brand-600">
+                  <f.icon size={22} />
+                </div>
+                <h3 className="mb-2 font-semibold">{f.title}</h3>
+                <p className="text-sm leading-relaxed text-ink-mute">{f.desc}</p>
               </div>
-              <h3 className="mb-2 font-semibold">{f.title}</h3>
-              <p className="text-sm leading-relaxed text-ink-mute">{f.desc}</p>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* 模型跑马灯 */}
-      <section id="models" className="relative z-10 border-y border-line bg-panel/50 py-14">
+      {/* 模型 */}
+      <section id="models" className="border-t border-line bg-card py-16">
         <div className="mx-auto max-w-6xl px-6">
           <div className="mb-8 flex items-center justify-between">
             <h2 className="text-xl font-bold">支持的主流模型</h2>
-            <Link to={user ? '/console/models' : '/register'} className="flex items-center gap-1 text-sm text-brand-400 hover:text-brand-300">
+            <Link
+              to={user ? '/console/models' : '/register'}
+              className="flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700"
+            >
               查看完整价目 <ChevronRight size={15} />
             </Link>
           </div>
           <div className="flex flex-wrap gap-3">
             {MODELS.map(m => (
-              <span key={m} className="chip border border-line bg-card/70 !px-4 !py-2 font-mono !text-[13px] text-ink-dim transition hover:border-brand-500/40 hover:text-ink">
+              <span
+                key={m}
+                className="chip border border-line bg-bg !px-4 !py-2 font-mono !text-[13px] text-ink-dim transition-colors hover:border-brand-300 hover:text-ink"
+              >
                 {m}
               </span>
             ))}
@@ -175,21 +178,22 @@ export default function Landing() {
       </section>
 
       {/* CTA */}
-      <section className="relative z-10 mx-auto max-w-6xl px-6 py-24 text-center">
-        <div className="card relative overflow-hidden p-12">
-          <div className="pointer-events-none absolute -top-24 left-1/2 h-64 w-[560px] -translate-x-1/2 rounded-full bg-brand-600/20 blur-[100px]" />
-          <h2 className="relative text-3xl font-bold tracking-tight">准备好开始了吗?</h2>
-          <p className="relative mx-auto mt-3 max-w-md text-ink-mute">
-            注册即送体验额度,一分钟完成接入,让你的应用立刻拥有全球大模型能力。
-          </p>
-          <Link to={user ? '/console' : '/register'} className="btn-primary relative mt-8 !px-8 !py-3 !text-base">
-            免费创建账号 <ArrowRight size={17} />
-          </Link>
+      <section className="border-t border-line bg-bg py-20">
+        <div className="mx-auto max-w-6xl px-6 text-center">
+          <div className="card mx-auto max-w-3xl p-12">
+            <h2 className="text-3xl font-bold tracking-tight">准备好开始了吗?</h2>
+            <p className="mx-auto mt-3 max-w-md text-ink-mute">
+              注册即送体验额度,一分钟完成接入,让你的应用立刻拥有全球大模型能力。
+            </p>
+            <Link to={user ? '/console' : '/register'} className="btn-primary mt-8 !px-8 !py-3 !text-base">
+              免费创建账号 <ArrowRight size={17} />
+            </Link>
+          </div>
         </div>
       </section>
 
       {/* 页脚 */}
-      <footer className="relative z-10 border-t border-line py-10">
+      <footer className="border-t border-line bg-card py-10">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 text-sm text-ink-mute">
           <Logo size={24} textClass="text-sm" />
           <span>© {new Date().getFullYear()} {site.site_name} · 稳定 · 快速 · 优惠的大模型 API 中转</span>
