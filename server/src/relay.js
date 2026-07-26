@@ -92,12 +92,24 @@ export function countChatTokens(messages) {
     total += countText(
       typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')
     )
+    // agent 的对话里,assistant 的工具调用和 tool 消息的执行结果都是实打实的输入 token
+    for (const tc of m.tool_calls || []) {
+      total += countText(tc.function?.name) + countText(tc.function?.arguments) + 4
+    }
   }
   return total
 }
 
 function countPromptTokens(body) {
-  if (Array.isArray(body.messages)) return countChatTokens(body.messages)
+  if (Array.isArray(body.messages)) {
+    let total = countChatTokens(body.messages)
+    // 工具定义会随每次请求一起发给模型 —— agent 挂十几个工具时,
+    // 光 schema 就是几千 token。漏掉它会让预扣费严重低估。
+    if (Array.isArray(body.tools) && body.tools.length) {
+      total += countText(JSON.stringify(body.tools))
+    }
+    return total
+  }
   const raw = body.input ?? body.prompt ?? ''
   return countText(typeof raw === 'string' ? raw : JSON.stringify(raw))
 }

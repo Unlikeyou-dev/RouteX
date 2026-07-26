@@ -8,6 +8,9 @@
 ## ✨ 功能特性
 
 - **OpenAI 全兼容中转** — `/v1/chat/completions`、`/v1/completions`、`/v1/embeddings`、`/v1/models`,支持流式输出(SSE)
+- **面向 Agent** — **function calling 全链路跨协议打通**:请求里的 `tools` / `tool_choice`、assistant 回复里的 `tool_calls`、
+  `role:"tool"` 的执行结果,在 Claude 与 Gemini 原生协议上双向无损转换,流式的工具参数增量也逐块转发。
+  多轮工具循环、并行工具调用、多模态图片输入(agent 截图)均可直接使用
 - **多协议上游** — 除 OpenAI 兼容渠道外,支持 **Claude(Anthropic)/ Gemini(Google)原生 API** 自动协议转换,流式一并转换
 - **多渠道智能调度** — 优先级 + 权重加权分流,故障自动切换;**连续失败自动熔断**,后台定时探活、恢复后自动上线。
   定时探活默认走**免费的模型列表接口**(不消耗任何 token),需要严格验证时可切成真实对话;手动测试连通性始终发真实请求
@@ -98,3 +101,5 @@ curl http://your-domain/v1/chat/completions \
   确认入账在事务内完成且幂等,重复点击不会重复加额度
 - 想换成自动到账,在 `server/src/payments/` 下新增一个 provider(实现 `createOrder`)并注册即可,订单状态机与前端都不用改
 - 计费价格表内置主流模型,可通过管理接口调整,未知模型走兜底价
+- 定位是 **agent 场景**:只做 `/chat/completions`、`/completions`、`/embeddings`,
+  不做图片生成、语音、rerank 这类按次计费的端点
