@@ -9,6 +9,7 @@ const router = Router()
 const PUBLIC_KEYS = ['site_name', 'announcement']
 const ADMIN_KEYS = [
   'site_name', 'announcement', 'price_ratio', 'signup_bonus', 'aff_rebate_percent',
+  'cache_read_ratio', 'cache_write_ratio',
   // 收款与推送
   'pay_qr_alipay', 'pay_qr_wechat', 'cny_rate', 'topup_min', 'bark_key', 'bark_server',
   // 风控
@@ -32,6 +33,7 @@ router.get('/', authRequired, adminRequired, (req, res) => {
 
 const NUMERIC_KEYS = [
   'price_ratio', 'signup_bonus', 'aff_rebate_percent', 'cny_rate', 'topup_min',
+  'cache_read_ratio', 'cache_write_ratio',
   'precharge_completion_tokens', 'precharge_margin', 'max_concurrent_per_user',
   'relay_rate_limit_per_min', 'log_retention_days', 'backup_keep', 'health_sweep_minutes'
 ]

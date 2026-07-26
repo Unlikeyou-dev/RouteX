@@ -143,6 +143,13 @@ ensureColumn('topups', 'submitted_at', 'submitted_at INTEGER')
 ensureColumn('topups', 'reviewed_by', 'reviewed_by INTEGER')
 ensureColumn('topups', 'reviewed_at', 'reviewed_at INTEGER')
 ensureColumn('topups', 'review_note', 'review_note TEXT')
+// 缓存命中的输入 token 上游是打折的,这里单独记一笔,既用于计价也让用户看到省了多少
+ensureColumn('logs', 'cached_tokens', 'cached_tokens INTEGER NOT NULL DEFAULT 0')
+ensureColumn('logs', 'reasoning_tokens', 'reasoning_tokens INTEGER NOT NULL DEFAULT 0')
+// 每个模型可单独设缓存倍率(各家差异很大:OpenAI 约 0.5、Anthropic 约 0.1、Gemini 约 0.25);
+// 留空则回落到站点默认
+ensureColumn('model_prices', 'cache_read_ratio', 'cache_read_ratio REAL')
+ensureColumn('model_prices', 'cache_write_ratio', 'cache_write_ratio REAL')
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_topups_order_no ON topups(order_no)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_topups_status ON topups(status, id)')
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite ON users(invite_code)')
@@ -186,6 +193,9 @@ const defaultSettings = {
   site_name: 'RouteX',
   announcement: '欢迎使用 RouteX API 中转站,新用户注册即送 $1 体验额度。',
   price_ratio: '1',
+  // 缓存 token 的默认倍率(相对输入价):读取命中打一折,写入缓存略贵
+  cache_read_ratio: '0.1',
+  cache_write_ratio: '1.25',
   signup_bonus: '1',
   aff_rebate_percent: '10',
   // 收款与推送(扫码充值:管理员贴自己的个人收款码,到账后人工确认)

@@ -30,6 +30,48 @@ function partsToText(content) {
     .join('')
 }
 
+// ---- 用量归一化 ----
+// 三家对「缓存命中的输入 token」统计口径不同,直接拿来计费必然算错:
+//   OpenAI     prompt_tokens 里**已包含** cached_tokens
+//   Anthropic  input_tokens **不含** cache_creation / cache_read,是三个独立的数
+//   Gemini     promptTokenCount 里**已包含** cachedContentTokenCount
+// 统一按 OpenAI 口径输出:prompt_tokens = 全部输入(含缓存),
+// 缓存部分放在 prompt_tokens_details 里,由计费层拆出来按折扣价单独算。
+function usageOf({ prompt, completion, cacheRead = 0, cacheWrite = 0, reasoning = 0 }) {
+  const u = {
+    prompt_tokens: prompt,
+    completion_tokens: completion,
+    total_tokens: prompt + completion
+  }
+  if (cacheRead || cacheWrite) {
+    u.prompt_tokens_details = { cached_tokens: cacheRead }
+    if (cacheWrite) u.cache_creation_tokens = cacheWrite
+  }
+  if (reasoning) u.completion_tokens_details = { reasoning_tokens: reasoning }
+  return u
+}
+
+function anthropicUsage(raw = {}) {
+  const cacheRead = raw.cache_read_input_tokens ?? 0
+  const cacheWrite = raw.cache_creation_input_tokens ?? 0
+  return usageOf({
+    // Anthropic 的 input_tokens 不含缓存,要自己加回去才是「总输入」
+    prompt: (raw.input_tokens ?? 0) + cacheRead + cacheWrite,
+    completion: raw.output_tokens ?? 0,
+    cacheRead,
+    cacheWrite
+  })
+}
+
+function geminiUsage(um = {}) {
+  return usageOf({
+    prompt: um.promptTokenCount ?? 0,
+    completion: (um.candidatesTokenCount ?? 0) + (um.thoughtsTokenCount ?? 0),
+    cacheRead: um.cachedContentTokenCount ?? 0,
+    reasoning: um.thoughtsTokenCount ?? 0
+  })
+}
+
 // 工具参数在 OpenAI 里是 JSON 字符串,在 Anthropic/Gemini 里是对象
 function parseArgs(raw) {
   if (raw == null || raw === '') return {}
@@ -40,6 +82,20 @@ function parseArgs(raw) {
     // 上游偶尔会吐出不合法的 JSON,原样塞进去比整个请求失败要好
     return { _raw: String(raw) }
   }
+}
+
+// ---- 推理 / 思考链 ----
+// OpenAI 用 reasoning_effort(low/medium/high)控制思考深度,
+// Anthropic 用 thinking.budget_tokens,Gemini 用 thinkingConfig.thinkingBudget。
+// 统一以 reasoning_effort 为入口换算成预算,让 agent 不用为每家写一套参数。
+const EFFORT_BUDGET = { low: 1024, medium: 4096, high: 16384 }
+
+function thinkingBudget(body) {
+  // 显式给了预算就以它为准
+  const explicit = Number(body.thinking?.budget_tokens ?? body.reasoning?.max_tokens)
+  if (Number.isFinite(explicit) && explicit > 0) return explicit
+  const effort = body.reasoning_effort
+  return effort && EFFORT_BUDGET[effort] ? EFFORT_BUDGET[effort] : 0
 }
 
 // tool_call_id → 函数名。Gemini 的 functionResponse 认名字不认 id,
@@ -265,6 +321,9 @@ export function buildUpstreamRequest(channel, apiKey, path, body, upstreamModel,
     const { system, messages } = messagesToAnthropic(body)
     const noTools = body.tool_choice === 'none'
     const tools = noTools ? undefined : toolsToAnthropic(body.tools)
+    const budget = thinkingBudget(body)
+    // Anthropic 要求 max_tokens 大于思考预算,否则直接 400
+    const maxTokens = body.max_tokens || body.max_completion_tokens || 4096
     return {
       url: `${base}/v1/messages`,
       headers: {
@@ -274,9 +333,10 @@ export function buildUpstreamRequest(channel, apiKey, path, body, upstreamModel,
       },
       payload: {
         model: upstreamModel,
-        max_tokens: body.max_tokens || body.max_completion_tokens || 4096,
+        max_tokens: budget > 0 ? Math.max(maxTokens, budget + 1024) : maxTokens,
         ...(system ? { system } : {}),
         messages,
+        ...(budget > 0 ? { thinking: { type: 'enabled', budget_tokens: budget } } : {}),
         ...(tools ? { tools } : {}),
         ...(tools && toolChoiceToAnthropic(body.tool_choice)
           ? { tool_choice: toolChoiceToAnthropic(body.tool_choice) }
@@ -306,7 +366,10 @@ export function buildUpstreamRequest(channel, apiKey, path, body, upstreamModel,
           ...(body.top_p !== undefined ? { topP: body.top_p } : {}),
           ...(body.max_tokens ? { maxOutputTokens: body.max_tokens } : {}),
           // JSON 模式:agent 拿结构化结果时会用
-          ...(body.response_format?.type === 'json_object' ? { responseMimeType: 'application/json' } : {})
+          ...(body.response_format?.type === 'json_object' ? { responseMimeType: 'application/json' } : {}),
+          ...(thinkingBudget(body) > 0
+            ? { thinkingConfig: { thinkingBudget: thinkingBudget(body), includeThoughts: true } }
+            : {})
         }
       }
     }
@@ -333,6 +396,8 @@ export function convertResponse(channel, model, data) {
   if (channel.type === 'anthropic') {
     const blocks = data.content || []
     const text = blocks.filter(b => b.type === 'text').map(b => b.text).join('')
+    // 思考过程放在 reasoning_content —— 这是目前客户端最普遍认的字段
+    const reasoning = blocks.filter(b => b.type === 'thinking').map(b => b.thinking || '').join('')
     const toolCalls = blocks
       .filter(b => b.type === 'tool_use')
       .map(b => ({
@@ -351,22 +416,21 @@ export function convertResponse(channel, model, data) {
           role: 'assistant',
           // OpenAI 约定:只有工具调用时 content 为 null
           content: text || (toolCalls.length ? null : ''),
+          ...(reasoning ? { reasoning_content: reasoning } : {}),
           ...(toolCalls.length ? { tool_calls: toolCalls } : {})
         },
         finish_reason: toolCalls.length ? 'tool_calls' : (finishMap[data.stop_reason] || 'stop')
       }],
-      usage: {
-        prompt_tokens: data.usage?.input_tokens ?? 0,
-        completion_tokens: data.usage?.output_tokens ?? 0,
-        total_tokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0)
-      }
+      usage: anthropicUsage(data.usage)
     }
   }
 
   if (channel.type === 'gemini') {
     const cand = data.candidates?.[0]
     const parts = cand?.content?.parts || []
-    const text = parts.map(p => p.text || '').join('')
+    // Gemini 用 thought:true 标记思考片段,不能混进正文
+    const text = parts.filter(p => !p.thought).map(p => p.text || '').join('')
+    const reasoning = parts.filter(p => p.thought).map(p => p.text || '').join('')
     const toolCalls = parts
       .filter(p => p.functionCall)
       .map(p => ({
@@ -385,15 +449,12 @@ export function convertResponse(channel, model, data) {
         message: {
           role: 'assistant',
           content: text || (toolCalls.length ? null : ''),
+          ...(reasoning ? { reasoning_content: reasoning } : {}),
           ...(toolCalls.length ? { tool_calls: toolCalls } : {})
         },
         finish_reason: toolCalls.length ? 'tool_calls' : (finishMap[cand?.finishReason] || 'stop')
       }],
-      usage: {
-        prompt_tokens: um.promptTokenCount ?? 0,
-        completion_tokens: um.candidatesTokenCount ?? 0,
-        total_tokens: um.totalTokenCount ?? 0
-      }
+      usage: geminiUsage(um)
     }
   }
 
@@ -406,7 +467,7 @@ export function convertResponse(channel, model, data) {
 export function createStreamTransformer(channel, model) {
   const id = 'chatcmpl-' + Math.random().toString(36).slice(2, 10)
   let usage = null
-  let inputTokens = 0
+  let startUsage = {}
   let chars = 0
   let finished = false
   let sawToolCall = false
@@ -443,7 +504,8 @@ export function createStreamTransformer(channel, model) {
     try { ev = JSON.parse(payload) } catch { return null }
 
     if (ev.type === 'message_start') {
-      inputTokens = ev.message?.usage?.input_tokens ?? 0
+      // 输入侧的用量(含缓存明细)只在开头给一次,必须存下来
+      startUsage = ev.message?.usage || {}
       return chunk({ role: 'assistant', content: '' })
     }
 
@@ -470,6 +532,12 @@ export function createStreamTransformer(channel, model) {
         chars += ev.delta.text.length
         return chunk({ content: ev.delta.text })
       }
+      // 思考增量单独走 reasoning_content,不能混进正文
+      if (ev.delta?.type === 'thinking_delta') {
+        const t = ev.delta.thinking || ''
+        chars += t.length
+        return chunk({ reasoning_content: t })
+      }
       if (ev.delta?.type === 'input_json_delta') {
         const idx = toolIndexOfBlock.get(ev.index)
         if (idx === undefined) return null
@@ -481,8 +549,7 @@ export function createStreamTransformer(channel, model) {
     }
 
     if (ev.type === 'message_delta') {
-      const out = ev.usage?.output_tokens ?? 0
-      usage = { prompt_tokens: inputTokens, completion_tokens: out, total_tokens: inputTokens + out }
+      usage = anthropicUsage({ ...startUsage, output_tokens: ev.usage?.output_tokens ?? 0 })
       if (ev.delta?.stop_reason === 'tool_use') sawToolCall = true
       return null
     }
@@ -501,13 +568,7 @@ export function createStreamTransformer(channel, model) {
     let ev
     try { ev = JSON.parse(payload) } catch { return null }
 
-    if (ev.usageMetadata) {
-      usage = {
-        prompt_tokens: ev.usageMetadata.promptTokenCount ?? 0,
-        completion_tokens: ev.usageMetadata.candidatesTokenCount ?? 0,
-        total_tokens: ev.usageMetadata.totalTokenCount ?? 0
-      }
-    }
+    if (ev.usageMetadata) usage = geminiUsage(ev.usageMetadata)
 
     const parts = ev.candidates?.[0]?.content?.parts || []
     let out = ''
@@ -529,7 +590,7 @@ export function createStreamTransformer(channel, model) {
       }
       if (p.text) {
         chars += p.text.length
-        out += chunk({ content: p.text })
+        out += chunk(p.thought ? { reasoning_content: p.text } : { content: p.text })
       }
     }
     return out || null

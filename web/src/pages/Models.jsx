@@ -20,9 +20,11 @@ export default function Models() {
   const openEdit = r => setModal({
     model: r.model, isNew: false,
     input: r.base_input_price ?? r.input_price,
-    output: r.base_output_price ?? r.output_price
+    output: r.base_output_price ?? r.output_price,
+    cacheRead: r.cache_read_ratio ?? '',
+    cacheWrite: r.cache_write_ratio ?? ''
   })
-  const openCreate = () => setModal({ model: '', isNew: true, input: 1, output: 2 })
+  const openCreate = () => setModal({ model: '', isNew: true, input: 1, output: 2, cacheRead: '', cacheWrite: '' })
 
   const submit = async () => {
     if (!modal.model.trim()) return toast('请填写模型名', 'error')
@@ -30,7 +32,13 @@ export default function Models() {
     try {
       await api('/models/price', {
         method: 'PUT',
-        body: { model: modal.model.trim(), input_price: Number(modal.input), output_price: Number(modal.output) }
+        body: {
+          model: modal.model.trim(),
+          input_price: Number(modal.input),
+          output_price: Number(modal.output),
+          cache_read_ratio: modal.cacheRead,
+          cache_write_ratio: modal.cacheWrite
+        }
       })
       toast('定价已保存', 'success')
       setModal(null)
@@ -230,7 +238,37 @@ export default function Models() {
               />
             </div>
           </div>
-          <p className="text-xs text-ink-mute">这里填基础价;用户实际看到的价格会再乘以站点倍率与其分组倍率。</p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">缓存读取倍率</label>
+              <input
+                className="input text-right tabular-nums"
+                type="number"
+                step="0.05"
+                min="0"
+                placeholder="留空跟随默认"
+                value={modal?.cacheRead ?? ''}
+                onChange={e => setModal(m => ({ ...m, cacheRead: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">缓存写入倍率</label>
+              <input
+                className="input text-right tabular-nums"
+                type="number"
+                step="0.05"
+                min="0"
+                placeholder="留空跟随默认"
+                value={modal?.cacheWrite ?? ''}
+                onChange={e => setModal(m => ({ ...m, cacheWrite: e.target.value }))}
+              />
+            </div>
+          </div>
+          <p className="text-xs leading-5 text-ink-mute">
+            这里填基础价;用户实际看到的价格会再乘以站点倍率与其分组倍率。
+            缓存倍率是相对输入价的折扣,各家差异很大(OpenAI 约 0.5、Anthropic 约 0.1、Gemini 约 0.25),
+            留空则跟随「站点设置」里的默认值。
+          </p>
           <div className="flex justify-end gap-2 pt-2">
             <button className="btn-ghost" onClick={() => setModal(null)}>取消</button>
             <button className="btn-primary" onClick={submit} disabled={busy}>保存</button>

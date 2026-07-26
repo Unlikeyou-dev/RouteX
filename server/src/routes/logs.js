@@ -60,6 +60,7 @@ router.get('/', (req, res) => {
       `SELECT COUNT(*) AS total,
               COALESCE(SUM(l.cost), 0) AS cost,
               COALESCE(SUM(l.total_tokens), 0) AS tokens,
+              COALESCE(SUM(l.cached_tokens), 0) AS cached,
               COALESCE(SUM(l.status = 'error'), 0) AS errors
        ${joinSql} ${whereSql}`
     )
@@ -85,6 +86,7 @@ router.get('/', (req, res) => {
         count: summary.total,
         cost: summary.cost,
         tokens: summary.tokens,
+        cached: summary.cached,
         errors: summary.errors
       }
     }

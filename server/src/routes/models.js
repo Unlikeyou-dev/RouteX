@@ -49,6 +49,8 @@ router.get('/', authRequired, (req, res) => {
         ? {
             base_input_price: p.input,
             base_output_price: p.output,
+            cache_read_ratio: p.cache_read_ratio,
+            cache_write_ratio: p.cache_write_ratio,
             priced: p.source !== 'fallback',
             price_source: p.source,
             matched_price_rule: p.matched,
@@ -81,13 +83,28 @@ router.get('/unpriced', authRequired, adminRequired, (req, res) => {
 })
 
 // 管理员更新定价
+// 缓存倍率留空表示「跟随站点默认」,所以要区分「没传」和「传了空」
+const optionalRatio = v => {
+  if (v === undefined || v === null || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
 router.put('/price', authRequired, adminRequired, (req, res) => {
-  const { model, input_price, output_price } = req.body || {}
+  const { model, input_price, output_price, cache_read_ratio, cache_write_ratio } = req.body || {}
   if (!model) return res.status(400).json({ success: false, message: '缺少模型名' })
   db.prepare(
-    `INSERT INTO model_prices (model, input_price, output_price) VALUES (?, ?, ?)
-     ON CONFLICT(model) DO UPDATE SET input_price = excluded.input_price, output_price = excluded.output_price`
-  ).run(model, Number(input_price) || 0, Number(output_price) || 0)
+    `INSERT INTO model_prices (model, input_price, output_price, cache_read_ratio, cache_write_ratio)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(model) DO UPDATE SET
+       input_price = excluded.input_price,
+       output_price = excluded.output_price,
+       cache_read_ratio = excluded.cache_read_ratio,
+       cache_write_ratio = excluded.cache_write_ratio`
+  ).run(
+    model, Number(input_price) || 0, Number(output_price) || 0,
+    optionalRatio(cache_read_ratio), optionalRatio(cache_write_ratio)
+  )
   res.json({ success: true })
 })
 

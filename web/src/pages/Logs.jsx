@@ -117,7 +117,11 @@ export default function Logs() {
           <SumTile label="调用次数" value={fmtNum(s.count)} />
           <SumTile label="消耗 tokens" value={fmtNum(s.tokens)} />
           <SumTile label="总费用" value={fmtUSD(s.cost)} />
-          <SumTile label="失败次数" value={fmtNum(s.errors)} tone={s.errors > 0 ? 'bad' : ''} />
+          {s.cached > 0 ? (
+            <SumTile label="缓存命中" value={fmtNum(s.cached)} tone="ok" />
+          ) : (
+            <SumTile label="失败次数" value={fmtNum(s.errors)} tone={s.errors > 0 ? 'bad' : ''} />
+          )}
         </div>
       )}
 
@@ -154,6 +158,16 @@ export default function Logs() {
                     {isAdmin && <td className="td">{l.channel_name || '—'}</td>}
                     <td className="td-r">
                       {fmtNum(l.prompt_tokens)} / {fmtNum(l.completion_tokens)}
+                      {l.cached_tokens > 0 && (
+                        <span className="ml-1 text-ok" title={`其中 ${l.cached_tokens} 个输入 token 命中缓存,按折扣价计费`}>
+                          ⚡{fmtNum(l.cached_tokens)}
+                        </span>
+                      )}
+                      {l.reasoning_tokens > 0 && (
+                        <span className="ml-1 text-ink-mute" title={`包含 ${l.reasoning_tokens} 个思考 token`}>
+                          🧠{fmtNum(l.reasoning_tokens)}
+                        </span>
+                      )}
                     </td>
                     <td className="td-r">{fmtUSD(l.cost)}</td>
                     <td className="td-r">{l.latency_ms}ms</td>
@@ -180,7 +194,7 @@ function SumTile({ label, value, tone = '' }) {
   return (
     <div className="card px-4 py-3">
       <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-mute">{label}</div>
-      <div className={`mt-1 text-lg font-semibold tabular-nums ${tone === 'bad' ? 'text-bad' : 'text-ink'}`}>
+      <div className={`mt-1 text-lg font-semibold tabular-nums ${tone === 'bad' ? 'text-bad' : tone === 'ok' ? 'text-ok' : 'text-ink'}`}>
         {value}
       </div>
     </div>

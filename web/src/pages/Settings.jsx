@@ -224,8 +224,19 @@ export default function Settings() {
                 <input className="input" type="number" step="1" min="0" value={form.aff_rebate_percent} onChange={set('aff_rebate_percent')} />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">缓存读取默认倍率</label>
+                <input className="input" type="number" step="0.05" min="0" value={form.cache_read_ratio} onChange={set('cache_read_ratio')} />
+              </div>
+              <div>
+                <label className="label">缓存写入默认倍率</label>
+                <input className="input" type="number" step="0.05" min="0" value={form.cache_write_ratio} onChange={set('cache_write_ratio')} />
+              </div>
+            </div>
             <p className="text-xs leading-5 text-ink-mute">
               最终价格 = 基础价 × 计费倍率 × 用户分组倍率;被邀请人每次兑换充值,邀请人按比例得返利。
+              命中上游缓存的输入 token 按「输入价 × 缓存倍率」计价,可在「模型价格」里为单个模型单独设定。
             </p>
             <button className="btn-primary" onClick={save} disabled={busy}>
               <Save size={15} /> 保存设置

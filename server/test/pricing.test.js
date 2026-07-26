@@ -16,10 +16,11 @@ const setPrice = (model, i, o) =>
 test('查价:精确命中优先于前缀命中', () => {
   setPrice('gpt-4o', 2.5, 10)
   setPrice('gpt-4o-2024-11-20', 3, 12)
-  assert.deepEqual(
-    { ...lookupPrice('gpt-4o-2024-11-20') },
-    { input: 3, output: 12, source: 'exact', matched: 'gpt-4o-2024-11-20' }
-  )
+  const p = lookupPrice('gpt-4o-2024-11-20')
+  assert.equal(p.input, 3)
+  assert.equal(p.output, 12)
+  assert.equal(p.source, 'exact')
+  assert.equal(p.matched, 'gpt-4o-2024-11-20')
 })
 
 test('查价:带日期后缀的模型回落到前缀规则', () => {

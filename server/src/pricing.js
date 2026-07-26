@@ -33,13 +33,44 @@ import { db, getSetting } from './db.js'
 // 查价并说明来源:exact 精确命中 / prefix 前缀命中(带日期后缀的模型)/ fallback 兜底。
 // 价目页靠 source 把「未定价」的模型标出来,免得它们悄悄按兜底价卖。
 export function lookupPrice(model) {
-  const row = db.prepare('SELECT input_price, output_price FROM model_prices WHERE model = ?').get(model)
-  if (row) return { input: row.input_price, output: row.output_price, source: 'exact', matched: model }
+  const row = db.prepare('SELECT * FROM model_prices WHERE model = ?').get(model)
+  if (row) return priceOf(row, 'exact', model)
   const base = db
-    .prepare("SELECT model, input_price, output_price FROM model_prices WHERE ? LIKE model || '%' ORDER BY LENGTH(model) DESC LIMIT 1")
+    .prepare("SELECT * FROM model_prices WHERE ? LIKE model || '%' ORDER BY LENGTH(model) DESC LIMIT 1")
     .get(model)
-  if (base) return { input: base.input_price, output: base.output_price, source: 'prefix', matched: base.model }
-  return { input: FALLBACK_PRICE[0], output: FALLBACK_PRICE[1], source: 'fallback', matched: null }
+  if (base) return priceOf(base, 'prefix', base.model)
+  return {
+    input: FALLBACK_PRICE[0], output: FALLBACK_PRICE[1],
+    cacheRead: FALLBACK_PRICE[0] * defaultCacheRead(),
+    cacheWrite: FALLBACK_PRICE[0] * defaultCacheWrite(),
+    source: 'fallback', matched: null
+  }
+}
+
+const defaultCacheRead = () => {
+  const v = Number(getSetting('cache_read_ratio', '0.1'))
+  return Number.isFinite(v) && v >= 0 ? v : 0.1
+}
+const defaultCacheWrite = () => {
+  const v = Number(getSetting('cache_write_ratio', '1.25'))
+  return Number.isFinite(v) && v >= 0 ? v : 1.25
+}
+
+// 缓存价按「输入价 × 倍率」推导:模型自己填了倍率就用自己的,没填回落站点默认。
+// 各家折扣差很多,一个全局倍率必然会对其中一家算错,所以留了 per-model 的口子。
+function priceOf(row, source, matched) {
+  const readRatio = row.cache_read_ratio ?? defaultCacheRead()
+  const writeRatio = row.cache_write_ratio ?? defaultCacheWrite()
+  return {
+    input: row.input_price,
+    output: row.output_price,
+    cacheRead: row.input_price * readRatio,
+    cacheWrite: row.input_price * writeRatio,
+    cache_read_ratio: row.cache_read_ratio,
+    cache_write_ratio: row.cache_write_ratio,
+    source,
+    matched
+  }
 }
 
 export function getPrice(model) {
@@ -61,9 +92,25 @@ export function suggestPrice(model) {
 import { usd } from './util.js'
 import { groupRatio } from './db.js'
 
-// 最终价 = 基础价 × 站点倍率 × 用户分组倍率,收敛到微美元精度
-export function computeCost(model, promptTokens, completionTokens, group = 'default') {
-  const [inp, out] = getPrice(model)
+// 最终价 = 基础价 × 站点倍率 × 用户分组倍率,收敛到微美元精度。
+//
+// promptTokens 按 OpenAI 的口径:**包含**缓存命中的部分。
+// cacheRead / cacheWrite 从中拆出来单独按折扣价计,剩下的才是全价输入。
+// (Anthropic 的 input_tokens 本身不含缓存,已在适配器里归一化过)
+export function computeCost(model, promptTokens, completionTokens, group = 'default', extra = {}) {
+  const p = lookupPrice(model)
+  const cacheRead = Math.max(0, Number(extra.cacheRead) || 0)
+  const cacheWrite = Math.max(0, Number(extra.cacheWrite) || 0)
+  const fullInput = Math.max(0, promptTokens - cacheRead - cacheWrite)
+
+  const raw =
+    (fullInput * p.input + cacheRead * p.cacheRead + cacheWrite * p.cacheWrite + completionTokens * p.output) /
+    1_000_000
   const ratio = Number(getSetting('price_ratio', '1')) || 1
-  return usd(((promptTokens * inp + completionTokens * out) / 1_000_000) * ratio * groupRatio(group))
+  return usd(raw * ratio * groupRatio(group))
+}
+
+// 不打折时会是多少 —— 用来告诉用户「这次省了多少」
+export function computeFullCost(model, promptTokens, completionTokens, group = 'default') {
+  return computeCost(model, promptTokens, completionTokens, group)
 }

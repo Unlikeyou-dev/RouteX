@@ -203,10 +203,22 @@ export function markChannelSuccess(channelId) {
     .run(channelId)
 }
 
+// 从上游 usage 里取出缓存与思考 token(已由适配器归一化成 OpenAI 口径)
+export function cacheTokensOf(usage) {
+  return {
+    cacheRead: usage?.prompt_tokens_details?.cached_tokens ?? 0,
+    cacheWrite: usage?.cache_creation_tokens ?? 0,
+    reasoning: usage?.completion_tokens_details?.reasoning_tokens ?? 0
+  }
+}
+
 // ---- 计费落账 ----
 // reserved 是请求前冻结的额度:这里先原样退还,再按实际用量扣,两步在同一事务内完成。
-function settle({ user, token, channel, model, promptTokens, completionTokens, latency, stream, ok, error, reserved = 0 }) {
-  const cost = ok ? computeCost(model, promptTokens, completionTokens, user.group_name) : 0
+function settle({
+  user, token, channel, model, promptTokens, completionTokens, latency, stream, ok, error,
+  reserved = 0, cacheRead = 0, cacheWrite = 0, reasoning = 0
+}) {
+  const cost = ok ? computeCost(model, promptTokens, completionTokens, user.group_name, { cacheRead, cacheWrite }) : 0
   const tx = db.transaction(() => {
     if (reserved > 0) {
       db.prepare('UPDATE users SET quota = ROUND(quota + ?, 6) WHERE id = ?').run(reserved, user.id)
@@ -226,11 +238,13 @@ function settle({ user, token, channel, model, promptTokens, completionTokens, l
         .run(cost, channel.id)
     }
     db.prepare(
-      `INSERT INTO logs (user_id, token_id, channel_id, model, prompt_tokens, completion_tokens, total_tokens, cost, latency_ms, stream, status, error, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO logs (user_id, token_id, channel_id, model, prompt_tokens, completion_tokens, total_tokens,
+                         cached_tokens, reasoning_tokens, cost, latency_ms, stream, status, error, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       user.id, token.id, channel?.id || null, model,
       promptTokens, completionTokens, promptTokens + completionTokens,
+      cacheRead, reasoning,
       cost, latency, stream ? 1 : 0, ok ? 'success' : 'error', error || null, now()
     )
   })
@@ -421,7 +435,8 @@ async function relayJson(req, res, upstream, channel, model, body, start, reserv
   settle({
     user: req.relayUser, token: req.relayToken, channel, model,
     promptTokens, completionTokens,
-    latency: Date.now() - start, stream: false, ok: true, reserved
+    latency: Date.now() - start, stream: false, ok: true, reserved,
+    ...cacheTokensOf(usage)
   })
   res.status(200).json(data)
 }
@@ -505,7 +520,8 @@ async function relayStream(req, res, upstream, channel, model, body, start, rese
   settle({
     user: req.relayUser, token: req.relayToken, channel, model,
     promptTokens, completionTokens,
-    latency: Date.now() - start, stream: true, ok: true, reserved
+    latency: Date.now() - start, stream: true, ok: true, reserved,
+    ...cacheTokensOf(usage)
   })
 }
 
