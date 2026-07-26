@@ -33,7 +33,7 @@ export default {
         badbg: '#fef2f2'
       },
       fontFamily: {
-        sans: ['system-ui', '-apple-system', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'],
+        sans: ['"Noto Sans SC"', 'system-ui', '-apple-system', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'],
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace']
       },
       boxShadow: {
