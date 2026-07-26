@@ -4,7 +4,7 @@ import { db, now } from './db.js'
 import { computeCost } from './pricing.js'
 import { RELAY_TIMEOUT_MS } from './config.js'
 import { buildUpstreamRequest, convertResponse, createStreamTransformer } from './adapters.js'
-import { splitModels } from './util.js'
+import { splitModels, splitList, channelServesGroup } from './util.js'
 
 const router = Router()
 
@@ -65,12 +65,14 @@ function relayAuth(req, res, next) {
 
 // ---- 渠道选择 ----
 // 原生协议渠道只支持 chat;embeddings / completions 仅路由到 OpenAI 兼容渠道
-function pickChannels(model, path) {
+// 渠道分组:用户只会被路由到「服务其所在分组」的渠道(对齐 new-api)
+function pickChannels(model, path, group) {
   const rows = db
     .prepare('SELECT * FROM channels WHERE status = 1 AND auto_disabled = 0 ORDER BY priority DESC')
     .all()
   const candidates = rows.filter(c => {
     if (path !== '/chat/completions' && c.type !== 'openai') return false
+    if (!channelServesGroup(c, group)) return false
     return splitModels(c.models).includes(model)
   })
   if (candidates.length === 0) return []
@@ -144,6 +146,11 @@ function settle({ user, token, channel, model, promptTokens, completionTokens, l
       db.prepare('UPDATE users SET request_count = request_count + 1 WHERE id = ?').run(user.id)
       db.prepare('UPDATE tokens SET last_used_at = ? WHERE id = ?').run(now(), token.id)
     }
+    // 渠道用量:失败也计一次调用,便于看出「跑量大但成功率低」的渠道
+    if (channel) {
+      db.prepare('UPDATE channels SET used_quota = ROUND(used_quota + ?, 6), request_count = request_count + 1 WHERE id = ?')
+        .run(cost, channel.id)
+    }
     db.prepare(
       `INSERT INTO logs (user_id, token_id, channel_id, model, prompt_tokens, completion_tokens, total_tokens, cost, latency_ms, stream, status, error, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -159,9 +166,16 @@ function settle({ user, token, channel, model, promptTokens, completionTokens, l
 
 // ---- GET /v1/models ----
 router.get('/models', relayAuth, (req, res) => {
-  const channels = db.prepare('SELECT models FROM channels WHERE status = 1').all()
+  const group = req.relayUser.group_name || 'default'
+  const limits = splitList(req.relayToken.model_limits)
+  const channels = db.prepare('SELECT models, group_names FROM channels WHERE status = 1').all()
   const set = new Set()
-  for (const c of channels) splitModels(c.models).forEach(m => set.add(m))
+  for (const c of channels) {
+    if (!channelServesGroup(c, group)) continue
+    splitModels(c.models).forEach(m => {
+      if (!limits.length || limits.includes(m)) set.add(m)
+    })
+  }
   res.json({
     object: 'list',
     data: [...set].sort().map(id => ({ id, object: 'model', created: 0, owned_by: 'routex' }))
@@ -180,8 +194,23 @@ async function handleRelay(req, res, path) {
   const model = String(body.model || '').trim()
   if (!model) return openaiError(res, 400, '请求缺少 model 字段', 'invalid_request')
 
-  const candidates = pickChannels(model, path)
+  // 令牌级模型白名单(留空不限)
+  const limits = splitList(req.relayToken.model_limits)
+  if (limits.length && !limits.includes(model)) {
+    return openaiError(res, 403, `该令牌不允许调用模型 ${model}`, 'model_not_allowed')
+  }
+
+  const group = req.relayUser.group_name || 'default'
+  const candidates = pickChannels(model, path, group)
   if (candidates.length === 0) {
+    // 区分「站点根本没这个模型」与「有但不对本分组开放」,避免用户反复排查
+    const servedElsewhere = db
+      .prepare('SELECT models FROM channels WHERE status = 1 AND auto_disabled = 0')
+      .all()
+      .some(c => splitModels(c.models).includes(model))
+    if (servedElsewhere) {
+      return openaiError(res, 403, `模型 ${model} 未对你所在的分组「${group}」开放`, 'model_not_in_group')
+    }
     return openaiError(res, 503, `当前没有可用渠道支持模型 ${model}`, 'no_available_channel')
   }
 

@@ -4,7 +4,9 @@ import { api, fmtUSD, fmtTime } from '../api.js'
 import { toast } from '../store.jsx'
 import { Modal, PageHeader, Spinner, Empty, StatusChip, CopyButton, Switch } from '../components/ui.jsx'
 
-const emptyForm = { name: '', unlimited: true, quota: 5 }
+const emptyForm = { name: '', unlimited: true, quota: 5, model_limits: '' }
+
+const splitList = s => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean)
 
 export default function Tokens() {
   const [rows, setRows] = useState(null)
@@ -21,7 +23,10 @@ export default function Tokens() {
     setModal({ mode: 'create' })
   }
   const openEdit = row => {
-    setForm({ name: row.name, unlimited: !!row.unlimited, quota: row.quota || 5 })
+    setForm({
+      name: row.name, unlimited: !!row.unlimited, quota: row.quota || 5,
+      model_limits: row.model_limits || ''
+    })
     setModal({ mode: 'edit', row })
   }
 
@@ -91,6 +96,7 @@ export default function Tokens() {
                   <th className="th">密钥</th>
                   <th className="th-r">额度</th>
                   <th className="th-r">已用</th>
+                  <th className="th">可用模型</th>
                   <th className="th">最后使用</th>
                   <th className="th">状态</th>
                   <th className="th text-right">操作</th>
@@ -114,6 +120,15 @@ export default function Tokens() {
                     </td>
                     <td className="td-r">{row.unlimited ? '无限制' : fmtUSD(row.quota, 2)}</td>
                     <td className="td-r">{fmtUSD(row.used_quota)}</td>
+                    <td className="td">
+                      {splitList(row.model_limits).length ? (
+                        <span className="chip bg-brand-50 text-brand-700" title={splitList(row.model_limits).join('\n')}>
+                          限 {splitList(row.model_limits).length} 个
+                        </span>
+                      ) : (
+                        <span className="text-ink-mute">不限</span>
+                      )}
+                    </td>
                     <td className="td tabular-nums">{fmtTime(row.last_used_at)}</td>
                     <td className="td">
                       <button onClick={() => toggle(row)}>
@@ -172,6 +187,18 @@ export default function Tokens() {
               />
             </div>
           )}
+          <div>
+            <label className="label">可用模型限制(选填,一行一个;留空表示不限)</label>
+            <textarea
+              className="input min-h-[56px] resize-y font-mono !text-[13px]"
+              placeholder={'gpt-4o-mini\ndeepseek-chat'}
+              value={form.model_limits}
+              onChange={e => setForm(f => ({ ...f, model_limits: e.target.value }))}
+            />
+            <p className="mt-1.5 text-xs text-ink-mute">
+              填写后,该令牌只能调用列出的模型,其余请求会被直接拒绝。
+            </p>
+          </div>
           <div className="flex justify-end gap-2 pt-2">
             <button className="btn-ghost" onClick={() => setModal(null)}>取消</button>
             <button className="btn-primary" onClick={submit} disabled={busy}>

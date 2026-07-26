@@ -34,9 +34,21 @@ export function channelBaseUrl(channel) {
   return channel.base_url || DEFAULT_BASE_URLS[channel.type] || DEFAULT_BASE_URLS.openai
 }
 
-// 模型列表解析:兼容逗号与换行分隔(渠道表单里一行一个是最自然的填法)
-export function splitModels(models) {
-  return String(models || '').split(/[\n,]/).map(m => m.trim()).filter(Boolean)
+// 列表解析:兼容逗号与换行分隔(表单里一行一个是最自然的填法)
+export function splitList(text) {
+  return String(text || '').split(/[\n,]/).map(s => s.trim()).filter(Boolean)
+}
+
+export const splitModels = splitList
+
+// 渠道服务的用户分组;历史数据留空时按 default 处理
+export function channelGroups(channel) {
+  const list = splitList(channel.group_names)
+  return list.length ? list : ['default']
+}
+
+export function channelServesGroup(channel, group) {
+  return channelGroups(channel).includes(group || 'default')
 }
 
 export function genRedemptionCode() {

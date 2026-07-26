@@ -2,15 +2,19 @@ import { Router } from 'express'
 import { db, getSetting, groupRatio } from '../db.js'
 import { authRequired, adminRequired } from '../middleware/auth.js'
 import { getPrice } from '../pricing.js'
-import { splitModels } from '../util.js'
+import { splitModels, channelServesGroup } from '../util.js'
 
 const router = Router()
 
 // 站点可用模型 + 定价(登录可见)
 router.get('/', authRequired, (req, res) => {
-  const channels = db.prepare('SELECT models FROM channels WHERE status = 1').all()
+  // 可用性按当前用户所在分组判定:不对本组开放的模型不算「可用」
+  const channels = db.prepare('SELECT models, group_names FROM channels WHERE status = 1').all()
   const available = new Set()
-  for (const c of channels) splitModels(c.models).forEach(m => available.add(m))
+  for (const c of channels) {
+    if (!channelServesGroup(c, req.user.group_name)) continue
+    splitModels(c.models).forEach(m => available.add(m))
+  }
   // 展示价 = 基础价 × 站点倍率 × 当前用户分组倍率
   const ratio = (Number(getSetting('price_ratio', '1')) || 1) * groupRatio(req.user.group_name)
   const priced = db.prepare('SELECT * FROM model_prices ORDER BY model').all()

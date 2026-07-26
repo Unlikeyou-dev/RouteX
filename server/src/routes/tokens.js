@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { db, now } from '../db.js'
 import { authRequired } from '../middleware/auth.js'
-import { genApiKey, badRequest } from '../util.js'
+import { genApiKey, badRequest, splitList } from '../util.js'
 
 const router = Router()
 router.use(authRequired)
@@ -12,14 +12,17 @@ router.get('/', (req, res) => {
 })
 
 router.post('/', (req, res) => {
-  const { name, unlimited = true, quota = 0, expires_at = null } = req.body || {}
+  const { name, unlimited = true, quota = 0, expires_at = null, model_limits = '' } = req.body || {}
   if (!name || !name.trim()) return badRequest(res, '请填写令牌名称')
   const key = genApiKey()
   const info = db
     .prepare(
-      'INSERT INTO tokens (user_id, key, name, quota, unlimited, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO tokens (user_id, key, name, quota, unlimited, expires_at, model_limits, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     )
-    .run(req.user.id, key, name.trim(), Number(quota) || 0, unlimited ? 1 : 0, expires_at || null, now())
+    .run(
+      req.user.id, key, name.trim(), Number(quota) || 0, unlimited ? 1 : 0,
+      expires_at || null, splitList(model_limits).join(','), now()
+    )
   const row = db.prepare('SELECT * FROM tokens WHERE id = ?').get(info.lastInsertRowid)
   res.json({ success: true, data: row })
 })
@@ -27,15 +30,16 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const row = db.prepare('SELECT * FROM tokens WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id)
   if (!row) return badRequest(res, '令牌不存在')
-  const { name, unlimited, quota, expires_at, status } = req.body || {}
+  const { name, unlimited, quota, expires_at, status, model_limits } = req.body || {}
   db.prepare(
-    `UPDATE tokens SET name = ?, unlimited = ?, quota = ?, expires_at = ?, status = ? WHERE id = ?`
+    `UPDATE tokens SET name = ?, unlimited = ?, quota = ?, expires_at = ?, status = ?, model_limits = ? WHERE id = ?`
   ).run(
     name !== undefined ? String(name) : row.name,
     unlimited !== undefined ? (unlimited ? 1 : 0) : row.unlimited,
     quota !== undefined ? Number(quota) || 0 : row.quota,
     expires_at !== undefined ? expires_at : row.expires_at,
     status !== undefined ? (status ? 1 : 0) : row.status,
+    model_limits !== undefined ? splitList(model_limits).join(',') : row.model_limits,
     row.id
   )
   res.json({ success: true, data: db.prepare('SELECT * FROM tokens WHERE id = ?').get(row.id) })

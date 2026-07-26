@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, Pencil, PlugZap, Loader2 } from 'lucide-react'
-import { api, fmtTime } from '../api.js'
+import { Plus, Trash2, Pencil, PlugZap, Loader2, Zap, Eraser } from 'lucide-react'
+import { api, fmtTime, fmtUSD, fmtNum } from '../api.js'
 import { toast } from '../store.jsx'
 import { Modal, PageHeader, Spinner, Empty, StatusChip } from '../components/ui.jsx'
 
 const emptyForm = {
   name: '', base_url: '', api_key: '', models: '',
-  model_mapping: '{}', priority: 0, weight: 1, type: 'openai'
+  model_mapping: '{}', priority: 0, weight: 1, type: 'openai', group_names: 'default'
 }
 
 const TYPE_META = {
@@ -15,15 +15,32 @@ const TYPE_META = {
   gemini: { label: 'Gemini 原生', cls: 'bg-okbg text-ok', official: 'https://generativelanguage.googleapis.com' }
 }
 
+// 逗号/换行分隔的列表(与后端 splitList 口径一致)
+const splitList = s => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean)
+
 export default function Channels() {
   const [rows, setRows] = useState(null)
+  const [groups, setGroups] = useState([])
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(emptyForm)
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState({})
+  const [testingAll, setTestingAll] = useState(false)
+  const [selected, setSelected] = useState([])
 
-  const load = () => api('/channels').then(setRows).catch(e => toast(e.message, 'error'))
-  useEffect(() => { load() }, [])
+  const load = () =>
+    api('/channels')
+      .then(data => {
+        setRows(data)
+        // 丢掉已不存在的选中项,避免批量操作打到幽灵 id
+        setSelected(sel => sel.filter(id => data.some(r => r.id === id)))
+      })
+      .catch(e => toast(e.message, 'error'))
+
+  useEffect(() => {
+    load()
+    api('/groups').then(setGroups).catch(() => setGroups([]))
+  }, [])
 
   const openCreate = () => {
     setForm(emptyForm)
@@ -33,12 +50,14 @@ export default function Channels() {
     setForm({
       name: row.name, base_url: row.base_url, api_key: row.api_key,
       models: row.models, model_mapping: row.model_mapping,
-      priority: row.priority, weight: row.weight, type: row.type || 'openai'
+      priority: row.priority, weight: row.weight, type: row.type || 'openai',
+      group_names: row.group_names || 'default'
     })
     setModal({ mode: 'edit', row })
   }
 
   const submit = async () => {
+    if (!splitList(form.group_names).length) return toast('请至少选择一个服务分组', 'error')
     setBusy(true)
     try {
       if (modal.mode === 'create') {
@@ -91,15 +110,81 @@ export default function Channels() {
     }
   }
 
+  const testAll = async () => {
+    setTestingAll(true)
+    try {
+      const data = await api('/channels/test-all', { method: 'POST', body: {} })
+      toast(`测活完成:${data.ok}/${data.total} 个渠道连通正常`, data.ok === data.total ? 'success' : 'info')
+      load()
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setTestingAll(false)
+    }
+  }
+
+  const batch = async action => {
+    const labels = { enable: '启用', disable: '禁用', delete: '删除' }
+    if (action === 'delete' && !confirm(`确定删除选中的 ${selected.length} 个渠道吗?`)) return
+    try {
+      const data = await api('/channels/batch', { method: 'POST', body: { action, ids: selected } })
+      toast(`已${labels[action]} ${data.affected} 个渠道`, 'success')
+      setSelected([])
+      load()
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+  }
+
+  const purgeDisabled = async () => {
+    if (!confirm('确定删除所有「已禁用」的渠道吗?此操作不可撤销。')) return
+    try {
+      const data = await api('/channels/disabled', { method: 'DELETE' })
+      toast(data.affected ? `已清理 ${data.affected} 个禁用渠道` : '没有已禁用的渠道', 'success')
+      load()
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+  }
+
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+
+  // 分组多选:点击切换,至少保留一个
+  const toggleGroup = name => {
+    const cur = splitList(form.group_names)
+    const next = cur.includes(name) ? cur.filter(g => g !== name) : [...cur, name]
+    setForm(f => ({ ...f, group_names: next.join(',') }))
+  }
+
+  const allSelected = rows?.length > 0 && selected.length === rows.length
+  const toggleSelectAll = () => setSelected(allSelected ? [] : rows.map(r => r.id))
+  const toggleSelect = id =>
+    setSelected(sel => (sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]))
 
   return (
     <div className="animate-fade-up">
-      <PageHeader title="上游渠道" desc="接入上游中转站或官方 API,按优先级与权重智能调度。">
+      <PageHeader title="上游渠道" desc="接入上游中转站或官方 API,按分组、优先级与权重智能调度。">
+        <button className="btn-ghost" onClick={testAll} disabled={testingAll || !rows?.length}>
+          {testingAll ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 一键测活
+        </button>
+        <button className="btn-ghost" onClick={purgeDisabled} disabled={!rows?.length}>
+          <Eraser size={16} /> 清理禁用
+        </button>
         <button className="btn-primary" onClick={openCreate}>
           <Plus size={16} /> 添加渠道
         </button>
       </PageHeader>
+
+      {selected.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-panel px-4 py-3 text-sm">
+          <span className="text-ink-dim">已选中 {selected.length} 个渠道</span>
+          <div className="flex-1" />
+          <button className="btn-ghost !py-1.5" onClick={() => batch('enable')}>批量启用</button>
+          <button className="btn-ghost !py-1.5" onClick={() => batch('disable')}>批量禁用</button>
+          <button className="btn-ghost !py-1.5 !text-bad" onClick={() => batch('delete')}>批量删除</button>
+          <button className="btn-ghost !py-1.5" onClick={() => setSelected([])}>取消选择</button>
+        </div>
+      )}
 
       {!rows ? (
         <Spinner />
@@ -113,11 +198,22 @@ export default function Channels() {
             <table className="w-full">
               <thead className="border-b border-line">
                 <tr>
+                  <th className="th w-10">
+                    <input
+                      type="checkbox"
+                      className="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      aria-label="全选"
+                    />
+                  </th>
                   <th className="th">渠道</th>
                   <th className="th">类型</th>
+                  <th className="th">分组</th>
                   <th className="th">Base URL</th>
                   <th className="th-r">模型</th>
                   <th className="th-r">优先级 / 权重</th>
+                  <th className="th-r">用量</th>
                   <th className="th-r">连通性</th>
                   <th className="th">状态</th>
                   <th className="th text-right">操作</th>
@@ -125,13 +221,30 @@ export default function Channels() {
               </thead>
               <tbody className="divide-y divide-line/60">
                 {rows.map(row => {
-                  const modelCount = row.models.split(',').filter(m => m.trim()).length
+                  const modelCount = splitList(row.models).length
+                  const rowGroups = splitList(row.group_names)
                   return (
                     <tr key={row.id} className="transition hover:bg-panel/60">
+                      <td className="td">
+                        <input
+                          type="checkbox"
+                          className="checkbox"
+                          checked={selected.includes(row.id)}
+                          onChange={() => toggleSelect(row.id)}
+                          aria-label={`选择 ${row.name}`}
+                        />
+                      </td>
                       <td className="td font-medium text-ink">{row.name}</td>
                       <td className="td">
                         <span className={`chip ${(TYPE_META[row.type] || TYPE_META.openai).cls}`}>
                           {(TYPE_META[row.type] || TYPE_META.openai).label}
+                        </span>
+                      </td>
+                      <td className="td">
+                        <span className="flex flex-wrap gap-1">
+                          {(rowGroups.length ? rowGroups : ['default']).map(g => (
+                            <span key={g} className="chip bg-panel text-ink-dim">{g}</span>
+                          ))}
                         </span>
                       </td>
                       <td className="td max-w-[220px] truncate font-mono text-[13px]" title={row.base_url || '未填写,直连官方 API'}>
@@ -139,6 +252,10 @@ export default function Channels() {
                       </td>
                       <td className="td-r" title={row.models}>{modelCount}</td>
                       <td className="td-r">{row.priority} / {row.weight}</td>
+                      <td className="td-r" title={`累计 ${row.request_count || 0} 次调用`}>
+                        {fmtUSD(row.used_quota || 0)}
+                        <span className="ml-1 text-ink-mute">/ {fmtNum(row.request_count || 0)}</span>
+                      </td>
                       <td className="td-r">
                         {row.last_test_at == null ? (
                           <span className="text-ink-mute">未测试</span>
@@ -202,6 +319,27 @@ export default function Channels() {
                 <option value="gemini">Gemini 原生(Google API)</option>
               </select>
             </div>
+          </div>
+          <div>
+            <label className="label">服务分组(可多选,只有组内用户会被路由到该渠道)</label>
+            <div className="flex flex-wrap gap-2">
+              {(groups.length ? groups : [{ name: 'default', ratio: 1 }]).map(g => {
+                const on = splitList(form.group_names).includes(g.name)
+                return (
+                  <button
+                    key={g.name}
+                    type="button"
+                    onClick={() => toggleGroup(g.name)}
+                    className={`chip transition ${on ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-600/30' : 'bg-panel text-ink-mute'}`}
+                  >
+                    {g.name} <span className="opacity-60">×{g.ratio}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-1.5 text-xs text-ink-mute">
+              例如把高价渠道只给 vip 组,批发渠道给 default 组。分组在「用户分组」页维护。
+            </p>
           </div>
           <div>
             <label className="label">代理地址(选填,留空直连官方)</label>

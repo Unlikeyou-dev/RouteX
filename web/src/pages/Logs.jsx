@@ -1,25 +1,57 @@
 import { useEffect, useState } from 'react'
-import { Search } from 'lucide-react'
+import { Search, RotateCcw } from 'lucide-react'
 import { api, fmtUSD, fmtNum, fmtTime } from '../api.js'
 import { useAuth } from '../store.jsx'
 import { PageHeader, Spinner, Empty, Pagination } from '../components/ui.jsx'
+
+const emptyFilters = {
+  model: '', status: '', scope: 'mine', username: '', token_name: '', channel_id: '', start: '', end: ''
+}
+
+// <input type="date"> 的 YYYY-MM-DD → 当天起点 / 终点的秒级时间戳
+const dayStart = d => Math.floor(new Date(`${d}T00:00:00`).getTime() / 1000)
+const dayEnd = d => Math.floor(new Date(`${d}T23:59:59`).getTime() / 1000)
 
 export default function Logs() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [data, setData] = useState(null)
   const [page, setPage] = useState(1)
-  const [model, setModel] = useState('')
-  const [status, setStatus] = useState('')
-  const [scope, setScope] = useState('mine')
+  const [f, setF] = useState(emptyFilters)
+  const [channels, setChannels] = useState([])
+
+  useEffect(() => {
+    if (isAdmin) api('/channels').then(setChannels).catch(() => setChannels([]))
+  }, [isAdmin])
 
   useEffect(() => {
     const params = new URLSearchParams({ page, page_size: 20 })
-    if (model) params.set('model', model)
-    if (status) params.set('status', status)
-    if (isAdmin && scope === 'all') params.set('scope', 'all')
+    if (f.model) params.set('model', f.model)
+    if (f.status) params.set('status', f.status)
+    if (f.token_name) params.set('token_name', f.token_name)
+    if (f.start) params.set('start', dayStart(f.start))
+    if (f.end) params.set('end', dayEnd(f.end))
+    if (isAdmin && f.scope === 'all') {
+      params.set('scope', 'all')
+      if (f.username) params.set('username', f.username)
+    }
+    if (isAdmin && f.channel_id) params.set('channel_id', f.channel_id)
     api(`/logs?${params}`).then(setData).catch(() => setData({ rows: [], total: 0 }))
-  }, [page, model, status, scope, isAdmin])
+  }, [page, f, isAdmin])
+
+  // 任何筛选变化都回到第一页,否则会停在越界的空页
+  const set = (k, v) => {
+    setF(prev => ({ ...prev, [k]: v }))
+    setPage(1)
+  }
+  const reset = () => {
+    setF(emptyFilters)
+    setPage(1)
+  }
+
+  const dirty = Object.keys(emptyFilters).some(k => f[k] !== emptyFilters[k])
+  const s = data?.summary
+  const showUser = isAdmin && f.scope === 'all'
 
   return (
     <div className="animate-fade-up">
@@ -29,41 +61,65 @@ export default function Logs() {
         <div className="relative">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-mute" />
           <input
-            className="input !w-56 !pl-9"
+            className="input !w-48 !pl-9"
             placeholder="按模型名筛选"
-            value={model}
-            onChange={e => {
-              setModel(e.target.value)
-              setPage(1)
-            }}
+            value={f.model}
+            onChange={e => set('model', e.target.value)}
           />
         </div>
-        <select
-          className="input !w-32"
-          value={status}
-          onChange={e => {
-            setStatus(e.target.value)
-            setPage(1)
-          }}
-        >
+        <input
+          className="input !w-40"
+          placeholder="按令牌名筛选"
+          value={f.token_name}
+          onChange={e => set('token_name', e.target.value)}
+        />
+        <select className="input !w-32" value={f.status} onChange={e => set('status', e.target.value)}>
           <option value="">全部状态</option>
           <option value="success">成功</option>
           <option value="error">失败</option>
         </select>
         {isAdmin && (
-          <select
-            className="input !w-36"
-            value={scope}
-            onChange={e => {
-              setScope(e.target.value)
-              setPage(1)
-            }}
-          >
+          <select className="input !w-36" value={f.scope} onChange={e => set('scope', e.target.value)}>
             <option value="mine">仅我的调用</option>
             <option value="all">全站调用</option>
           </select>
         )}
+        {showUser && (
+          <input
+            className="input !w-36"
+            placeholder="按用户名筛选"
+            value={f.username}
+            onChange={e => set('username', e.target.value)}
+          />
+        )}
+        {isAdmin && (
+          <select className="input !w-40" value={f.channel_id} onChange={e => set('channel_id', e.target.value)}>
+            <option value="">全部渠道</option>
+            {channels.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        )}
+        <div className="flex items-center gap-2">
+          <input className="input !w-[150px]" type="date" value={f.start} onChange={e => set('start', e.target.value)} />
+          <span className="text-ink-mute">→</span>
+          <input className="input !w-[150px]" type="date" value={f.end} onChange={e => set('end', e.target.value)} />
+        </div>
+        {dirty && (
+          <button className="btn-ghost !py-2" onClick={reset}>
+            <RotateCcw size={15} /> 重置
+          </button>
+        )}
       </div>
+
+      {s && s.count > 0 && (
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <SumTile label="调用次数" value={fmtNum(s.count)} />
+          <SumTile label="消耗 tokens" value={fmtNum(s.tokens)} />
+          <SumTile label="总费用" value={fmtUSD(s.cost)} />
+          <SumTile label="失败次数" value={fmtNum(s.errors)} tone={s.errors > 0 ? 'bad' : ''} />
+        </div>
+      )}
 
       {!data ? (
         <Spinner />
@@ -78,7 +134,7 @@ export default function Logs() {
               <thead className="border-b border-line">
                 <tr>
                   <th className="th">时间</th>
-                  {isAdmin && scope === 'all' && <th className="th">用户</th>}
+                  {showUser && <th className="th">用户</th>}
                   <th className="th">令牌</th>
                   <th className="th">模型</th>
                   {isAdmin && <th className="th">渠道</th>}
@@ -92,7 +148,7 @@ export default function Logs() {
                 {data.rows.map(l => (
                   <tr key={l.id} className="transition hover:bg-panel/60">
                     <td className="td tabular-nums">{fmtTime(l.created_at)}</td>
-                    {isAdmin && scope === 'all' && <td className="td">{l.username || '—'}</td>}
+                    {showUser && <td className="td">{l.username || '—'}</td>}
                     <td className="td">{l.token_name || '—'}</td>
                     <td className="td font-mono text-[13px] text-ink">{l.model}</td>
                     {isAdmin && <td className="td">{l.channel_name || '—'}</td>}
@@ -116,6 +172,17 @@ export default function Logs() {
           <Pagination page={data.page} total={data.total} pageSize={data.page_size} onChange={setPage} />
         </div>
       )}
+    </div>
+  )
+}
+
+function SumTile({ label, value, tone = '' }) {
+  return (
+    <div className="card px-4 py-3">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-mute">{label}</div>
+      <div className={`mt-1 text-lg font-semibold tabular-nums ${tone === 'bad' ? 'text-bad' : 'text-ink'}`}>
+        {value}
+      </div>
     </div>
   )
 }

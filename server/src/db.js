@@ -117,6 +117,12 @@ ensureColumn('users', 'aff_count', 'aff_count INTEGER NOT NULL DEFAULT 0')
 ensureColumn('channels', 'type', "type TEXT NOT NULL DEFAULT 'openai'")
 ensureColumn('channels', 'auto_disabled', 'auto_disabled INTEGER NOT NULL DEFAULT 0')
 ensureColumn('channels', 'fail_count', 'fail_count INTEGER NOT NULL DEFAULT 0')
+// 渠道可服务的用户分组(可多组,逗号/换行分隔);用户只会被路由到自己所在组的渠道
+ensureColumn('channels', 'group_names', "group_names TEXT NOT NULL DEFAULT 'default'")
+ensureColumn('channels', 'used_quota', 'used_quota REAL NOT NULL DEFAULT 0')
+ensureColumn('channels', 'request_count', 'request_count INTEGER NOT NULL DEFAULT 0')
+// 令牌级模型白名单,留空表示不限
+ensureColumn('tokens', 'model_limits', "model_limits TEXT NOT NULL DEFAULT ''")
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite ON users(invite_code)')
 
 // 用户分组(计费倍率按组叠加)
@@ -131,16 +137,6 @@ export function groupRatio(name) {
   return row ? row.ratio : 1
 }
 
-// 为存量用户补发邀请码
-{
-  const missing = db.prepare('SELECT id FROM users WHERE invite_code IS NULL').all()
-  if (missing.length) {
-    const crypto = await import('node:crypto')
-    const upd = db.prepare('UPDATE users SET invite_code = ? WHERE id = ?')
-    for (const u of missing) upd.run(crypto.randomBytes(4).toString('hex'), u.id)
-  }
-}
-
 // ---- seed ----
 const userCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c
 if (userCount === 0) {
@@ -148,6 +144,16 @@ if (userCount === 0) {
     'INSERT INTO users (username, password_hash, role, quota, created_at) VALUES (?, ?, ?, ?, ?)'
   ).run('root', bcrypt.hashSync('123456', 10), 'admin', 100, now())
   console.log('[RouteX] seeded admin account: root / 123456 (请尽快修改密码)')
+}
+
+// 补发邀请码 —— 必须排在 seed 之后,否则全新安装的 root 会永远没有邀请码
+{
+  const missing = db.prepare('SELECT id FROM users WHERE invite_code IS NULL').all()
+  if (missing.length) {
+    const crypto = await import('node:crypto')
+    const upd = db.prepare('UPDATE users SET invite_code = ? WHERE id = ?')
+    for (const u of missing) upd.run(crypto.randomBytes(4).toString('hex'), u.id)
+  }
 }
 
 const priceCount = db.prepare('SELECT COUNT(*) AS c FROM model_prices').get().c

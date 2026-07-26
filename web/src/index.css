@@ -72,6 +72,11 @@
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
+  /* 未装 forms 插件,用 accent-color 给原生复选框上品牌色 */
+  .checkbox {
+    @apply h-4 w-4 cursor-pointer align-middle accent-brand-600
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40;
+  }
   /* 版式层级 */
   .card-title {
     @apply text-[15px] font-semibold tracking-[-0.01em] text-ink;
