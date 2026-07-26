@@ -7,7 +7,11 @@
 
 ## ✨ 功能特性
 
-- **OpenAI 全兼容中转** — `/v1/chat/completions`、`/v1/completions`、`/v1/embeddings`、`/v1/models`,支持流式输出(SSE)
+- **多协议入站** — 同时提供 **OpenAI 兼容**(`/v1/chat/completions`、`/v1/completions`、`/v1/embeddings`)与
+  **Anthropic Messages**(`/v1/messages`,支持 `x-api-key` 鉴权)两套入口。
+  Claude Code、Claude Agent SDK、Cline 这类只说 Anthropic 原生协议的客户端可直接接入。
+  入站协议与上游渠道相同时**原样透传**(`cache_control`、思考 signature、beta 字段零损耗),
+  不同时才做双向转换 —— 两条路径的流式 SSE 事件序列都完整转换
 - **面向 Agent** — **function calling 全链路跨协议打通**:请求里的 `tools` / `tool_choice`、assistant 回复里的 `tool_calls`、
   `role:"tool"` 的执行结果,在 Claude 与 Gemini 原生协议上双向无损转换,流式的工具参数增量也逐块转发。
   多轮工具循环、并行工具调用、多模态图片输入(agent 截图)均可直接使用

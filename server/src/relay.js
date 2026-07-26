@@ -3,7 +3,13 @@ import { encode } from 'gpt-tokenizer'
 import { db, now, getSetting } from './db.js'
 import { computeCost } from './pricing.js'
 import { RELAY_TIMEOUT_MS } from './config.js'
-import { buildUpstreamRequest, convertResponse, createStreamTransformer, wantsThinking } from './adapters.js'
+import {
+  buildUpstreamRequest, convertResponse, createStreamTransformer, wantsThinking,
+  buildAnthropicPassthrough, anthropicUsage
+} from './adapters.js'
+import {
+  anthropicRequestToOpenAI, openaiResponseToAnthropic, createAnthropicEncoder, anthropicErrorBody
+} from './protocols/anthropic-in.js'
 import { splitModels, splitList, channelServesGroup, redactSecrets } from './util.js'
 import { consumeRelayQuota } from './middleware/ratelimit.js'
 
@@ -20,6 +26,8 @@ const FAIL_THRESHOLD = 3
 const estimatedCompletion = () => Number(getSetting('precharge_completion_tokens', '4096')) || 4096
 const thinkingAllowance = () => Number(getSetting('precharge_thinking_tokens', '8192')) || 8192
 const maxConcurrent = () => Number(getSetting('max_concurrent_per_user', '0')) || 0
+// 一次请求最多尝试几个渠道(故障转移次数),此前写死为 3
+const retryChannels = () => Math.max(1, Number(getSetting('relay_retry_channels', '3')) || 3)
 // 安全边际:输出侧我们能靠注入 max_tokens 卡死上界,输入侧不能 ——
 // 上游用的分词器和我们不同(多模态、缓存、系统提示注入都会让它数出更多),
 // 实测同一段文本我们数 8 个 token、上游报 1000 个。冻结时统一上浮这个系数兜住偏差。
@@ -115,19 +123,40 @@ function countPromptTokens(body) {
   return countText(typeof raw === 'string' ? raw : JSON.stringify(raw))
 }
 
+// ---- 按入站协议回错 ----
+// Anthropic 客户端 SDK 只认 {type:'error',error:{type,message}} 这个结构,
+// 回 OpenAI 风格的错误体会让它们解析失败、报出一堆无关的异常。
+function fail(req, res, status, message, code = null) {
+  if (req.inFormat === 'anthropic') {
+    const type = status === 401 ? 'authentication_error'
+      : status === 403 ? 'permission_error'
+        : status === 404 ? 'not_found_error'
+          : status === 429 ? 'rate_limit_error'
+            : status === 503 ? 'overloaded_error'
+              : status >= 500 ? 'api_error' : 'invalid_request_error'
+    return res.status(status).json(anthropicErrorBody(message, type))
+  }
+  return openaiError(res, status, message, code)
+}
+
 // ---- API Key 鉴权 ----
+// 两种入站协议的鉴权头不一样:OpenAI 用 Authorization: Bearer,
+// Anthropic 用 x-api-key。Claude Code 之类的客户端只会发后者。
 function relayAuth(req, res, next) {
   const header = req.headers.authorization || ''
-  const key = header.startsWith('Bearer ') ? header.slice(7).trim() : null
-  if (!key || !key.startsWith('sk-')) return openaiError(res, 401, '缺少 API Key,请在 Authorization 头中携带 Bearer sk-xxx')
+  const bearer = header.startsWith('Bearer ') ? header.slice(7).trim() : null
+  const key = bearer || String(req.headers['x-api-key'] || '').trim()
+  if (!key || !key.startsWith('sk-')) {
+    return fail(req, res, 401, '缺少 API Key,请在 Authorization: Bearer 或 x-api-key 头中携带 sk-xxx')
+  }
   const token = db.prepare('SELECT * FROM tokens WHERE key = ?').get(key)
-  if (!token || token.status !== 1) return openaiError(res, 401, 'API Key 无效或已被禁用', 'invalid_api_key')
-  if (token.expires_at && token.expires_at < now()) return openaiError(res, 401, 'API Key 已过期', 'expired_api_key')
+  if (!token || token.status !== 1) return fail(req, res, 401, 'API Key 无效或已被禁用', 'invalid_api_key')
+  if (token.expires_at && token.expires_at < now()) return fail(req, res, 401, 'API Key 已过期', 'expired_api_key')
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(token.user_id)
-  if (!user || user.status !== 1) return openaiError(res, 403, '账户不可用', 'account_disabled')
-  if (user.quota <= 0) return openaiError(res, 429, '账户额度不足,请充值后再试', 'insufficient_quota')
+  if (!user || user.status !== 1) return fail(req, res, 403, '账户不可用', 'account_disabled')
+  if (user.quota <= 0) return fail(req, res, 429, '账户额度不足,请充值后再试', 'insufficient_quota')
   if (!token.unlimited && token.used_quota >= token.quota) {
-    return openaiError(res, 429, '该令牌的额度已用尽', 'insufficient_quota')
+    return fail(req, res, 429, '该令牌的额度已用尽', 'insufficient_quota')
   }
   req.relayToken = token
   req.relayUser = user
@@ -265,32 +294,60 @@ router.get('/models', relayAuth, (req, res) => {
       if (!limits.length || limits.includes(m)) set.add(m)
     })
   }
+  // 同时带上两种协议的字段:OpenAI 客户端看 object/owned_by,
+  // Anthropic 客户端看 type/display_name —— 多带几个字段没有副作用
   res.json({
     object: 'list',
-    data: [...set].sort().map(id => ({ id, object: 'model', created: 0, owned_by: 'routex' }))
+    has_more: false,
+    data: [...set].sort().map(id => ({
+      id, object: 'model', created: 0, owned_by: 'routex',
+      type: 'model', display_name: id
+    }))
   })
 })
 
 // ---- 中转主入口 ----
 const RELAY_PATHS = ['/chat/completions', '/completions', '/embeddings']
 
+// 入站协议标记要在鉴权之前设好 —— 鉴权失败时也得按对应格式回错
+const markFormat = format => (req, res, next) => { req.inFormat = format; next() }
+
+// 限流 + 并发槽,两种入站协议共用
+async function guarded(req, res, run) {
+  if (!consumeRelayQuota(`t${req.relayToken.id}`, 60_000, relayRateLimit())) {
+    return fail(req, res, 429, `请求过于频繁,该令牌每分钟最多 ${relayRateLimit()} 次`, 'rate_limit_exceeded')
+  }
+  if (!acquireSlot(req.relayUser.id)) {
+    return fail(req, res, 429, `并发请求数已达上限(${maxConcurrent()}),请稍后重试`, 'too_many_requests')
+  }
+  try {
+    await run()
+  } finally {
+    releaseSlot(req.relayUser.id)
+  }
+}
+
 for (const path of RELAY_PATHS) {
-  router.post(path, relayAuth, async (req, res) => {
-    // 频率限制:按令牌计,防止脚本刷爆上游限额
-    if (!consumeRelayQuota(`t${req.relayToken.id}`, 60_000, relayRateLimit())) {
-      return openaiError(res, 429, `请求过于频繁,该令牌每分钟最多 ${relayRateLimit()} 次`, 'rate_limit_exceeded')
-    }
-    // 并发槽:防止单个用户把上游打爆(与预扣费互补,后者管钱、这里管压力)
-    if (!acquireSlot(req.relayUser.id)) {
-      return openaiError(res, 429, `并发请求数已达上限(${maxConcurrent()}),请稍后重试`, 'too_many_requests')
-    }
-    try {
-      await handleRelay(req, res, path)
-    } finally {
-      releaseSlot(req.relayUser.id)
-    }
+  router.post(path, markFormat('openai'), relayAuth, async (req, res) => {
+    req.canonicalBody = req.body || {}
+    req.nativeBody = req.body || {}
+    await guarded(req, res, () => handleRelay(req, res, path))
   })
 }
+
+// ---- Anthropic Messages 入站 ----
+// 站内一律以 OpenAI 格式做路由与计费,所以先转成规范格式;
+// 原始请求体留着 —— 命中 Anthropic 渠道时直接透传,不做任何转换。
+router.post('/messages', markFormat('anthropic'), relayAuth, async (req, res) => {
+  const native = req.body || {}
+  try {
+    req.canonicalBody = anthropicRequestToOpenAI(native)
+  } catch (e) {
+    return fail(req, res, 400, `请求体解析失败:${e.message}`)
+  }
+  req.nativeBody = native
+  await guarded(req, res, () => handleRelay(req, res, '/chat/completions'))
+})
 
 // 上游 4xx 的处理策略:
 // - 401/403  上游密钥问题,是站长的事,绝不能把上游原文(常含我们的 Key)回给用户
@@ -312,14 +369,16 @@ function describeUpstreamError(status, rawText) {
 }
 
 async function handleRelay(req, res, path) {
-  const body = req.body || {}
+  // body 一律是「规范格式」(OpenAI):路由、白名单、计费全基于它。
+  // 原始入站请求体在 req.nativeBody,仅在同协议透传时才用到。
+  const body = req.canonicalBody || req.body || {}
   const model = String(body.model || '').trim()
-  if (!model) return openaiError(res, 400, '请求缺少 model 字段', 'invalid_request')
+  if (!model) return fail(req, res, 400, '请求缺少 model 字段', 'invalid_request')
 
   // 令牌级模型白名单(留空不限)
   const limits = splitList(req.relayToken.model_limits)
   if (limits.length && !limits.includes(model)) {
-    return openaiError(res, 403, `该令牌不允许调用模型 ${model}`, 'model_not_allowed')
+    return fail(req, res, 403, `该令牌不允许调用模型 ${model}`, 'model_not_allowed')
   }
 
   const group = req.relayUser.group_name || 'default'
@@ -331,9 +390,9 @@ async function handleRelay(req, res, path) {
       .all()
       .some(c => splitModels(c.models).includes(model))
     if (servedElsewhere) {
-      return openaiError(res, 403, `模型 ${model} 未对你所在的分组「${group}」开放`, 'model_not_in_group')
+      return fail(req, res, 403, `模型 ${model} 未对你所在的分组「${group}」开放`, 'model_not_in_group')
     }
-    return openaiError(res, 503, `当前没有可用渠道支持模型 ${model}`, 'no_available_channel')
+    return fail(req, res, 503, `当前没有可用渠道支持模型 ${model}`, 'no_available_channel')
   }
 
   const isStream = !!body.stream && path === '/chat/completions'
@@ -362,13 +421,21 @@ async function handleRelay(req, res, path) {
     computeCost(model, promptTokens, outputCap, group) * prechargeMargin()
   )
   if (reserved === -1) {
-    return openaiError(res, 429, '账户额度不足以支撑本次请求,请充值后再试', 'insufficient_quota')
+    return fail(req, res, 429, '账户额度不足以支撑本次请求,请充值后再试', 'insufficient_quota')
   }
 
-  for (const channel of candidates.slice(0, 3)) {
+  for (const channel of candidates.slice(0, retryChannels())) {
     const upstreamModel = mapModel(channel, model)
     const apiKey = pickKey(channel)
-    const { url, headers, payload } = buildUpstreamRequest(channel, apiKey, path, cappedBody, upstreamModel, isStream)
+    // 入站与上游是同一种协议时走透传:不做任何转换,保真度最高
+    const passthrough = req.inFormat === 'anthropic' && channel.type === 'anthropic'
+    const { url, headers, payload } = passthrough
+      ? buildAnthropicPassthrough(
+        channel, apiKey,
+        requestedMax > 0 ? req.nativeBody : { ...req.nativeBody, max_tokens: outputCap },
+        upstreamModel, isStream
+      )
+      : buildUpstreamRequest(channel, apiKey, path, cappedBody, upstreamModel, isStream)
 
     let upstream
     try {
@@ -413,12 +480,13 @@ async function handleRelay(req, res, path) {
         latency: Date.now() - start, stream: isStream, ok: false,
         error: info.logDetail, reserved
       })
-      return openaiError(res, upstream.status, info.clientMessage, info.code)
+      return fail(req, res, upstream.status, info.clientMessage, info.code)
     }
 
     markChannelSuccess(channel.id)
-    if (isStream) return relayStream(req, res, upstream, channel, model, body, start, reserved)
-    return relayJson(req, res, upstream, channel, model, body, start, reserved)
+    const io = { passthrough }
+    if (isStream) return relayStream(req, res, upstream, channel, model, body, start, reserved, io)
+    return relayJson(req, res, upstream, channel, model, body, start, reserved, io)
   }
 
   // 所有渠道都没成功:冻结的额度必须原样退回,否则用户白白被扣
@@ -426,14 +494,15 @@ async function handleRelay(req, res, path) {
   return openaiError(res, 502, `所有可用渠道均请求失败:${redactSecrets(lastError)}`, 'upstream_error')
 }
 
-async function relayJson(req, res, upstream, channel, model, body, start, reserved = 0) {
+async function relayJson(req, res, upstream, channel, model, body, start, reserved = 0, io = {}) {
   let raw
   try {
     raw = await upstream.json()
   } catch {
     releaseQuota(req.relayUser.id, reserved)
-    return openaiError(res, 502, '上游返回了无法解析的响应', 'upstream_error')
+    return fail(req, res, 502, '上游返回了无法解析的响应', 'upstream_error')
   }
+  // 无论出站给什么格式,计费一律基于规范格式的 usage
   const data = convertResponse(channel, model, raw)
   const usage = data.usage || {}
   const promptTokens = usage.prompt_tokens || countPromptTokens(body)
@@ -445,10 +514,17 @@ async function relayJson(req, res, upstream, channel, model, body, start, reserv
     latency: Date.now() - start, stream: false, ok: true, reserved,
     ...cacheTokensOf(usage)
   })
+
+  if (req.inFormat === 'anthropic') {
+    // 透传时上游返回的本来就是 Anthropic 格式,只把模型名换回用户请求的那个
+    return res.status(200).json(
+      io.passthrough ? { ...raw, model } : openaiResponseToAnthropic(data, model)
+    )
+  }
   res.status(200).json(data)
 }
 
-async function relayStream(req, res, upstream, channel, model, body, start, reserved = 0) {
+async function relayStream(req, res, upstream, channel, model, body, start, reserved = 0, io = {}) {
   res.status(200)
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
   res.setHeader('Cache-Control', 'no-cache')
@@ -458,27 +534,77 @@ async function relayStream(req, res, upstream, channel, model, body, start, rese
 
   const reader = upstream.body.getReader()
   const decoder = new TextDecoder()
-  const native = channel.type !== 'openai'
-  const transformer = native ? createStreamTransformer(channel, model) : null
+  // 上游是原生协议(anthropic/gemini)时,先用 transformer 转成 OpenAI SSE
+  const nativeUpstream = channel.type !== 'openai'
+  const transformer = nativeUpstream ? createStreamTransformer(channel, model) : null
+  // 入站是 Anthropic 且不是透传时,还要再把 OpenAI SSE 编码成 Anthropic 事件
+  const toAnthropic = req.inFormat === 'anthropic' && !io.passthrough
+  const encoder = toAnthropic ? createAnthropicEncoder(model) : null
+  // 入站与上游同协议:字节原样转发,只旁路统计用量
+  const rawPassthrough = io.passthrough || (req.inFormat === 'openai' && !nativeUpstream)
 
   let sseBuffer = ''
   let usage = null
   let deltaText = ''
-  const DELTA_CAP = 1_000_000 // 兜底计数的累计文本上限
+  const DELTA_CAP = 1_000_000
   let clientGone = false
   res.on('close', () => { clientGone = true })
 
-  // OpenAI 透传模式:旁路解析 usage 与增量文本
-  const scanOpenAI = line => {
-    if (!line.startsWith('data:')) return
+  const parseData = line => {
+    if (!line.startsWith('data:')) return null
     const payload = line.slice(5).trim()
-    if (!payload || payload === '[DONE]') return
-    try {
-      const obj = JSON.parse(payload)
-      if (obj.usage) usage = obj.usage
-      const delta = obj.choices?.[0]?.delta?.content
-      if (typeof delta === 'string' && deltaText.length < DELTA_CAP) deltaText += delta
-    } catch { /* 忽略非 JSON 块 */ }
+    if (!payload || payload === '[DONE]') return null
+    try { return JSON.parse(payload) } catch { return null }
+  }
+
+  // OpenAI SSE:旁路取 usage 与增量文本(兜底计费用)
+  const scanOpenAI = obj => {
+    if (!obj) return
+    if (obj.usage) usage = obj.usage
+    const d = obj.choices?.[0]?.delta?.content
+    if (typeof d === 'string' && deltaText.length < DELTA_CAP) deltaText += d
+  }
+
+  // Anthropic SSE 透传:用量只在 message_start / message_delta 里出现一次
+  let anthropicStart = null
+  const scanAnthropic = obj => {
+    if (!obj) return
+    if (obj.type === 'message_start') anthropicStart = obj.message?.usage || {}
+    if (obj.type === 'message_delta') {
+      usage = anthropicUsage({ ...(anthropicStart || {}), output_tokens: obj.usage?.output_tokens ?? 0 })
+    }
+    if (obj.type === 'content_block_delta') {
+      const t = obj.delta?.text || obj.delta?.thinking || obj.delta?.partial_json || ''
+      if (deltaText.length < DELTA_CAP) deltaText += t
+    }
+  }
+
+  // 把一行上游 SSE 处理成「要写给客户端的内容」
+  const handleLine = line => {
+    if (rawPassthrough) {
+      // 字节已经原样写过了,这里只做统计
+      const obj = parseData(line)
+      if (io.passthrough) scanAnthropic(obj)
+      else scanOpenAI(obj)
+      return ''
+    }
+    if (nativeUpstream) {
+      const text = transformer.feed(line)
+      if (!text) return ''
+      if (!toAnthropic) return text
+      // transformer 产出的是 OpenAI SSE 文本,再编码成 Anthropic 事件
+      let out = ''
+      for (const l of text.split(/\r?\n/)) {
+        const obj = parseData(l.trim())
+        if (obj) out += encoder.feed(obj)
+      }
+      return out
+    }
+    // 上游是 OpenAI,入站是 Anthropic
+    const obj = parseData(line)
+    if (!obj) return ''
+    scanOpenAI(obj)
+    return encoder.feed(obj)
   }
 
   try {
@@ -489,41 +615,38 @@ async function relayStream(req, res, upstream, channel, model, body, start, rese
         await reader.cancel().catch(() => {})
         break
       }
-      if (!native) res.write(value)
+      if (rawPassthrough) res.write(value)
       sseBuffer += decoder.decode(value, { stream: true })
       let nl
       while ((nl = sseBuffer.indexOf('\n')) >= 0) {
         const line = sseBuffer.slice(0, nl).trimEnd()
         sseBuffer = sseBuffer.slice(nl + 1)
-        if (native) {
-          const out = transformer.feed(line)
-          if (out) res.write(out)
-        } else {
-          scanOpenAI(line)
-        }
+        const out = handleLine(line)
+        if (out) res.write(out)
       }
     }
   } catch { /* 上游中断,按已收到的内容计费 */ }
 
   if (sseBuffer) {
-    if (native) {
-      const out = transformer.feed(sseBuffer.trimEnd())
-      if (out) res.write(out)
-    } else {
-      scanOpenAI(sseBuffer.trimEnd())
-    }
+    const out = handleLine(sseBuffer.trimEnd())
+    if (out) res.write(out)
   }
-  if (native && !clientGone) res.write(transformer.finish())
+  if (!clientGone && !rawPassthrough) {
+    if (toAnthropic) res.write(encoder.finish())
+    else if (nativeUpstream) res.write(transformer.finish())
+  }
   res.end()
 
   let nativeChars = 0
-  if (native) {
-    usage = transformer.usage()
+  if (nativeUpstream && transformer) {
+    usage = transformer.usage() || usage
     nativeChars = transformer.chars()
   }
   const promptTokens = usage?.prompt_tokens || countPromptTokens(body)
   const completionTokens = usage?.completion_tokens ??
-    (native ? Math.max(1, Math.ceil(nativeChars / 3.5)) : Math.max(1, countText(deltaText)))
+    (nativeChars > 0
+      ? Math.max(1, Math.ceil(nativeChars / 3.5))
+      : Math.max(1, countText(deltaText)))
   settle({
     user: req.relayUser, token: req.relayToken, channel, model,
     promptTokens, completionTokens,

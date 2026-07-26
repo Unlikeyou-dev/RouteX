@@ -217,6 +217,8 @@ const defaultSettings = {
   max_concurrent_per_user: '10',
   // 单令牌每分钟请求上限,0 = 不限
   relay_rate_limit_per_min: '0',
+  // 单次请求最多尝试几个渠道(故障转移次数)
+  relay_retry_channels: '3',
   // 渠道巡检:models 用免费的模型列表接口探活,chat 发真实请求(会产生费用)
   health_check_enabled: '1',
   health_check_mode: 'models',

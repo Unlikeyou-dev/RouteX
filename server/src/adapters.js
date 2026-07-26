@@ -57,7 +57,7 @@ function usageOf({ prompt, completion, cacheRead = 0, cacheWrite = 0, reasoning 
   return u
 }
 
-function anthropicUsage(raw = {}) {
+export function anthropicUsage(raw = {}) {
   const cacheRead = raw.cache_read_input_tokens ?? 0
   const cacheWrite = raw.cache_creation_input_tokens ?? 0
   return usageOf({
@@ -418,6 +418,65 @@ function messagesToGemini(body) {
     contents,
     toolConfig: toolChoiceToGemini(body.tool_choice)
   }
+}
+
+// ================= Anthropic 原样透传 =================
+// 入站是 Anthropic、上游渠道也是 Anthropic 时,不做任何格式转换。
+// 只做三件必要的事:换模型名、按模型世代裁剪会导致 400 的参数、补缓存断点。
+// 客户端已经写好的 cache_control / thinking signature / beta 字段全部原样过去。
+export function buildAnthropicPassthrough(channel, apiKey, body, upstreamModel, isStream) {
+  const payload = { ...body, model: upstreamModel, stream: !!isStream }
+
+  if (!supportsSampling(upstreamModel)) {
+    delete payload.temperature
+    delete payload.top_p
+    delete payload.top_k
+  }
+
+  // 客户端可能按老模型写法发了 budget_tokens,在新模型上会 400 —— 就地改写
+  if (payload.thinking?.type === 'enabled' && !supportsThinkingBudget(upstreamModel)) {
+    const budget = Number(payload.thinking.budget_tokens) || 0
+    payload.thinking = { type: 'adaptive', display: payload.thinking.display || 'summarized' }
+    if (!payload.output_config && budget > 0) {
+      payload.output_config = { effort: budget >= 16384 ? 'high' : budget >= 4096 ? 'medium' : 'low' }
+    }
+  } else if (payload.thinking?.type === 'adaptive' && supportsThinkingBudget(upstreamModel)) {
+    // 反过来:老模型不认 adaptive
+    payload.thinking = { type: 'enabled', budget_tokens: 4096 }
+    payload.max_tokens = Math.max(Number(payload.max_tokens) || 4096, 5120)
+    delete payload.output_config
+  }
+
+  // 客户端自己打过断点就别插手,否则可能超出上游 4 个的上限
+  const hasCache = JSON.stringify(body).includes('"cache_control"')
+  if (!hasCache) {
+    const cached = withAnthropicCache({
+      system: typeof payload.system === 'string' ? payload.system : undefined,
+      messages: normalizedForCache(payload.messages),
+      tools: payload.tools
+    })
+    if (cached.tools) payload.tools = cached.tools
+    if (cached.system) payload.system = cached.system
+    if (cached.messages) payload.messages = cached.messages
+  }
+
+  return {
+    url: `${channelBaseUrl(channel)}/v1/messages`,
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    },
+    payload
+  }
+}
+
+// 透传时消息内容可能是字符串,缓存断点只能挂在块上 —— 统一成块数组
+function normalizedForCache(messages) {
+  return (messages || []).map(m => ({
+    ...m,
+    content: typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content
+  }))
 }
 
 // ================= 构造上游请求 =================
