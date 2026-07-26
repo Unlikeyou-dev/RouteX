@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Save, Plus, Trash2, Upload, Bell, X, ShieldCheck, HardDrive, Loader2 } from 'lucide-react'
+import { Save, Plus, Trash2, Upload, Bell, X, ShieldCheck, HardDrive, Loader2, CloudUpload } from 'lucide-react'
 import { api, setToken } from '../api.js'
 import { toast, useAuth } from '../store.jsx'
 import { PageHeader, Spinner, Switch } from '../components/ui.jsx'
@@ -84,6 +84,19 @@ export default function Settings() {
   const [busy, setBusy] = useState(false)
   const [backups, setBackups] = useState([])
   const [backingUp, setBackingUp] = useState(false)
+  const [storageTesting, setStorageTesting] = useState(false)
+
+  const testStorage = async () => {
+    setStorageTesting(true)
+    try {
+      const data = await api('/settings/storage-test', { method: 'POST', body: {} })
+      toast(`上传成功 → ${data.key}`, 'success')
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setStorageTesting(false)
+    }
+  }
 
   const loadGroups = () => api('/groups').then(setGroups).catch(() => {})
   const loadBackups = () => api('/settings/backups').then(setBackups).catch(() => {})
@@ -397,12 +410,71 @@ export default function Settings() {
             <div className="flex items-center justify-between rounded-xl border border-line bg-panel px-4 py-3">
               <div>
                 <div className="text-sm font-medium">每日自动备份</div>
-                <div className="text-xs text-ink-mute">备份存放于 server/data/backups</div>
+                <div className="text-xs text-ink-mute">
+                  备份存放于 server/data/backups,备完立刻校验(integrity_check + 关键表行数),校验不过会报警
+                </div>
               </div>
               <Switch
                 checked={form.backup_enabled === '1'}
                 onChange={v => setForm(f => ({ ...f, backup_enabled: v ? '1' : '0' }))}
               />
+            </div>
+
+            <div className="border-t border-line pt-4">
+              <div className="mb-1 text-sm font-medium">异地备份(S3 兼容对象存储)</div>
+              <p className="mb-3 text-xs leading-5 text-ink-mute">
+                本地备份和数据库在同一块盘上,盘坏、误删目录、机器丢失时两份一起没 ——
+                这是<b className="text-ink-dim">唯一能挡住那种情况</b>的措施。Cloudflare R2、阿里云 OSS、MinIO 等都可以,
+                留空则只留本地备份。
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Endpoint</label>
+                  <input
+                    className="input"
+                    placeholder="https://xxx.r2.cloudflarestorage.com"
+                    value={form.s3_endpoint || ''}
+                    onChange={set('s3_endpoint')}
+                  />
+                </div>
+                <div>
+                  <label className="label">Bucket</label>
+                  <input className="input" value={form.s3_bucket || ''} onChange={set('s3_bucket')} />
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Access Key</label>
+                  <input className="input" value={form.s3_access_key || ''} onChange={set('s3_access_key')} />
+                </div>
+                <div>
+                  <label className="label">Secret Key</label>
+                  <input
+                    className="input"
+                    type="password"
+                    placeholder="已保存则显示为星号,不改就别动"
+                    value={form.s3_secret_key || ''}
+                    onChange={set('s3_secret_key')}
+                  />
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Region</label>
+                  <input className="input" placeholder="auto" value={form.s3_region || ''} onChange={set('s3_region')} />
+                </div>
+                <div>
+                  <label className="label">路径前缀</label>
+                  <input className="input" placeholder="routex-backups" value={form.s3_prefix || ''} onChange={set('s3_prefix')} />
+                </div>
+              </div>
+              <button className="btn-ghost mt-4" onClick={testStorage} disabled={storageTesting}>
+                {storageTesting ? <Loader2 size={15} className="animate-spin" /> : <CloudUpload size={15} />}
+                测试上传
+              </button>
+              <p className="mt-1.5 text-xs leading-5 text-ink-mute">
+                配错了不该等到某天真出事才发现 —— 先保存,再点这里传一个小文件试试。
+              </p>
             </div>
 
             <div className="border-t border-line pt-4">

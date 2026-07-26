@@ -3,6 +3,7 @@ import { getSetting, setSetting } from '../db.js'
 import { authRequired, adminRequired } from '../middleware/auth.js'
 import { barkPush } from '../bark.js'
 import { backupNow, listBackups, pruneLogs } from '../maintenance.js'
+import { uploadBackup, storageConfigured } from '../storage.js'
 
 const router = Router()
 
@@ -18,8 +19,15 @@ const ADMIN_KEYS = [
   'relay_retry_channels', 'anthropic_auto_cache', 'cors_origins',
   // 运维
   'log_retention_days', 'backup_enabled', 'backup_keep',
-  'health_check_enabled', 'health_check_mode', 'health_sweep_minutes'
+  'health_check_enabled', 'health_check_mode', 'health_sweep_minutes',
+  // 异地备份
+  's3_endpoint', 's3_bucket', 's3_access_key', 's3_secret_key', 's3_region', 's3_prefix'
 ]
+
+// 对象存储的 Secret 拿到手就能改写/删掉你的全部备份,比其他配置都危险,
+// 所以只回一个占位符;提交时原样传回来 = 保持不变。
+const MASKED = '********'
+const SECRET_KEYS = ['s3_secret_key']
 
 // 公开站点信息(落地页使用)
 router.get('/public', (req, res) => {
@@ -28,7 +36,9 @@ router.get('/public', (req, res) => {
 })
 
 router.get('/', authRequired, adminRequired, (req, res) => {
-  const data = Object.fromEntries(ADMIN_KEYS.map(k => [k, getSetting(k)]))
+  const data = Object.fromEntries(ADMIN_KEYS.map(k => [
+    k, SECRET_KEYS.includes(k) && getSetting(k) ? MASKED : getSetting(k)
+  ]))
   res.json({ success: true, data })
 })
 
@@ -65,7 +75,10 @@ router.put('/', authRequired, adminRequired, (req, res) => {
     }
   }
   for (const key of ADMIN_KEYS) {
-    if (req.body?.[key] !== undefined) setSetting(key, req.body[key])
+    if (req.body?.[key] === undefined) continue
+    // 原样传回占位符说明用户没动这一项,不能把真 Secret 覆盖成一串星号
+    if (SECRET_KEYS.includes(key) && req.body[key] === MASKED) continue
+    setSetting(key, req.body[key])
   }
   res.json({ success: true })
 })
@@ -82,6 +95,14 @@ router.post('/backup', authRequired, adminRequired, async (req, res) => {
   } catch (e) {
     res.status(500).json({ success: false, message: `备份失败:${e.message}` })
   }
+})
+
+// 异地备份连通性测试。配错了不该等到某天真出事才发现,所以传一个小文件上去试试。
+router.post('/storage-test', authRequired, adminRequired, async (req, res) => {
+  if (!storageConfigured()) return res.status(400).json({ success: false, message: '请先填写对象存储配置并保存' })
+  const r = await uploadBackup(`connectivity-test-${Date.now()}.txt`, Buffer.from('RouteX storage test\n'))
+  if (r.ok) res.json({ success: true, data: { key: r.key } })
+  else res.status(400).json({ success: false, message: r.message })
 })
 
 router.post('/prune-logs', authRequired, adminRequired, (req, res) => {

@@ -238,6 +238,14 @@ const defaultSettings = {
   model_rate_limit_per_min: '0',
   // 单次请求最多尝试几个渠道(故障转移次数)
   relay_retry_channels: '3',
+  // 异地备份(S3 兼容对象存储)。本地备份和主库同盘,机器没了就一起没了 ——
+  // 这几项是唯一能挡住那种情况的措施
+  s3_endpoint: '',
+  s3_bucket: '',
+  s3_access_key: '',
+  s3_secret_key: '',
+  s3_region: 'auto',
+  s3_prefix: 'routex-backups',
   // 渠道巡检:models 用免费的模型列表接口探活,chat 发真实请求(会产生费用)
   health_check_enabled: '1',
   health_check_mode: 'models',
