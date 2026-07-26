@@ -1,15 +1,59 @@
 import { Router } from 'express'
 import { encode } from 'gpt-tokenizer'
-import { db, now } from './db.js'
+import { db, now, getSetting } from './db.js'
 import { computeCost } from './pricing.js'
 import { RELAY_TIMEOUT_MS } from './config.js'
 import { buildUpstreamRequest, convertResponse, createStreamTransformer } from './adapters.js'
-import { splitModels, splitList, channelServesGroup } from './util.js'
+import { splitModels, splitList, channelServesGroup, redactSecrets } from './util.js'
 
 const router = Router()
 
 // 连续失败 3 次熔断,由健康检查定时探活恢复
 const FAIL_THRESHOLD = 3
+
+// ---- 预扣费 ----
+// 只在响应回来后扣费是不安全的:余额检查和实际扣费之间存在时间窗,
+// 用户并发发起大量请求时每一个都能通过「余额 > 0」的检查,最终花掉的
+// 上游成本远超其余额(实测:$0.1 余额并发 20 个请求可造成 $72 的敞口)。
+// 因此改为请求前按「输入 + 预估输出」原子冻结额度,响应后按实际用量多退少补。
+const estimatedCompletion = () => Number(getSetting('precharge_completion_tokens', '4096')) || 4096
+const maxConcurrent = () => Number(getSetting('max_concurrent_per_user', '0')) || 0
+// 安全边际:输出侧我们能靠注入 max_tokens 卡死上界,输入侧不能 ——
+// 上游用的分词器和我们不同(多模态、缓存、系统提示注入都会让它数出更多),
+// 实测同一段文本我们数 8 个 token、上游报 1000 个。冻结时统一上浮这个系数兜住偏差。
+const prechargeMargin = () => Math.max(1, Number(getSetting('precharge_margin', '1.2')) || 1.2)
+
+// 冻结额度。返回冻结金额;余额不足返回 -1。
+// 关键在于 WHERE quota >= ? —— SQLite 单条 UPDATE 是原子的,
+// 并发请求里只有余额真正够的那些才能成功冻结。
+function reserveQuota(userId, amount) {
+  if (!(amount > 0)) return 0
+  const info = db
+    .prepare('UPDATE users SET quota = ROUND(quota - ?, 6) WHERE id = ? AND quota >= ?')
+    .run(amount, userId, amount)
+  return info.changes === 1 ? amount : -1
+}
+
+function releaseQuota(userId, amount) {
+  if (amount > 0) {
+    db.prepare('UPDATE users SET quota = ROUND(quota + ?, 6) WHERE id = ?').run(amount, userId)
+  }
+}
+
+// 每用户在途请求数(内存态,够单机用;设为 0 表示不限)
+const inflight = new Map()
+function acquireSlot(userId) {
+  const limit = maxConcurrent()
+  const cur = inflight.get(userId) || 0
+  if (limit > 0 && cur >= limit) return false
+  inflight.set(userId, cur + 1)
+  return true
+}
+function releaseSlot(userId) {
+  const cur = inflight.get(userId) || 0
+  if (cur <= 1) inflight.delete(userId)
+  else inflight.set(userId, cur - 1)
+}
 
 function openaiError(res, status, message, code = null) {
   return res.status(status).json({ error: { message, type: 'routex_error', code } })
@@ -134,9 +178,13 @@ export function markChannelSuccess(channelId) {
 }
 
 // ---- 计费落账 ----
-function settle({ user, token, channel, model, promptTokens, completionTokens, latency, stream, ok, error }) {
+// reserved 是请求前冻结的额度:这里先原样退还,再按实际用量扣,两步在同一事务内完成。
+function settle({ user, token, channel, model, promptTokens, completionTokens, latency, stream, ok, error, reserved = 0 }) {
   const cost = ok ? computeCost(model, promptTokens, completionTokens, user.group_name) : 0
   const tx = db.transaction(() => {
+    if (reserved > 0) {
+      db.prepare('UPDATE users SET quota = ROUND(quota + ?, 6) WHERE id = ?').run(reserved, user.id)
+    }
     if (ok && cost > 0) {
       db.prepare('UPDATE users SET quota = MAX(0, ROUND(quota - ?, 6)), used_quota = ROUND(used_quota + ?, 6), request_count = request_count + 1 WHERE id = ?')
         .run(cost, cost, user.id)
@@ -186,7 +234,36 @@ router.get('/models', relayAuth, (req, res) => {
 const RELAY_PATHS = ['/chat/completions', '/completions', '/embeddings']
 
 for (const path of RELAY_PATHS) {
-  router.post(path, relayAuth, (req, res) => handleRelay(req, res, path))
+  router.post(path, relayAuth, async (req, res) => {
+    // 并发槽:防止单个用户把上游打爆(与预扣费互补,后者管钱、这里管压力)
+    if (!acquireSlot(req.relayUser.id)) {
+      return openaiError(res, 429, `并发请求数已达上限(${maxConcurrent()}),请稍后重试`, 'too_many_requests')
+    }
+    try {
+      await handleRelay(req, res, path)
+    } finally {
+      releaseSlot(req.relayUser.id)
+    }
+  })
+}
+
+// 上游 4xx 的处理策略:
+// - 401/403  上游密钥问题,是站长的事,绝不能把上游原文(常含我们的 Key)回给用户
+// - 404      上游不认这个模型
+// - 400/422  用户自己的请求有问题,脱敏后透传,否则用户无从改起
+// - 其他     统一兜底
+function describeUpstreamError(status, rawText) {
+  const safe = redactSecrets(rawText).slice(0, 300)
+  if (status === 401 || status === 403) {
+    return { clientMessage: '上游渠道鉴权失败,请联系管理员', code: 'upstream_auth_error', logDetail: `HTTP ${status}(上游鉴权失败)`, channelFault: true }
+  }
+  if (status === 404) {
+    return { clientMessage: '上游不支持该模型', code: 'upstream_model_not_found', logDetail: `HTTP 404`, channelFault: true }
+  }
+  if (status === 400 || status === 422) {
+    return { clientMessage: safe || '请求参数不被上游接受', code: 'invalid_request', logDetail: `HTTP ${status}: ${safe}`, channelFault: false }
+  }
+  return { clientMessage: `上游返回错误(HTTP ${status})`, code: 'upstream_error', logDetail: `HTTP ${status}`, channelFault: false }
 }
 
 async function handleRelay(req, res, path) {
@@ -218,10 +295,29 @@ async function handleRelay(req, res, path) {
   const start = Date.now()
   let lastError = 'unknown error'
 
+  // 请求前冻结额度:按输入 token + 输出上限估价。
+  //
+  // 关键在于「输出上限」必须是真正的上界,否则冻结的钱不够覆盖实际消耗,
+  // 并发白嫖的口子就还在。所以请求没有指定 max_tokens 时,我们主动注入一个上限
+  // 再发给上游 —— 上游就不可能返回超过我们已经冻结的量。
+  const isEmbedding = path === '/embeddings'
+  const requestedMax = Number(body.max_tokens || body.max_completion_tokens) || 0
+  const outputCap = isEmbedding ? 0 : (requestedMax > 0 ? requestedMax : estimatedCompletion())
+  const cappedBody = isEmbedding || requestedMax > 0 ? body : { ...body, max_tokens: outputCap }
+
+  const promptTokens = countPromptTokens(body)
+  const reserved = reserveQuota(
+    req.relayUser.id,
+    computeCost(model, promptTokens, outputCap, group) * prechargeMargin()
+  )
+  if (reserved === -1) {
+    return openaiError(res, 429, '账户额度不足以支撑本次请求,请充值后再试', 'insufficient_quota')
+  }
+
   for (const channel of candidates.slice(0, 3)) {
     const upstreamModel = mapModel(channel, model)
     const apiKey = pickKey(channel)
-    const { url, headers, payload } = buildUpstreamRequest(channel, apiKey, path, body, upstreamModel, isStream)
+    const { url, headers, payload } = buildUpstreamRequest(channel, apiKey, path, cappedBody, upstreamModel, isStream)
 
     let upstream
     try {
@@ -245,32 +341,46 @@ async function handleRelay(req, res, path) {
       continue
     }
 
-    // 4xx 原样透传(请求本身的问题),不计费不熔断
+    // 其余 4xx:绝不原样透传 —— 上游错误里常带着我们自己的 Key 和供应商信息
     if (!upstream.ok) {
       const text = await upstream.text().catch(() => '')
+      const info = describeUpstreamError(upstream.status, text)
+      // 完整原文只进服务端控制台,方便站长排查
+      console.warn(`[RouteX] 渠道 #${channel.id} HTTP ${upstream.status}: ${redactSecrets(text).slice(0, 500)}`)
+
+      // 上游密钥失效 / 模型不存在属于渠道故障,应当转移到下一个渠道并累计熔断,
+      // 否则一个换了密钥的渠道会一直把请求吃掉
+      if (info.channelFault) {
+        lastError = `渠道 #${channel.id}:${info.clientMessage}`
+        markChannelFailure(channel.id, `HTTP ${upstream.status}`)
+        continue
+      }
+
       settle({
         user: req.relayUser, token: req.relayToken, channel, model,
         promptTokens: 0, completionTokens: 0,
         latency: Date.now() - start, stream: isStream, ok: false,
-        error: `HTTP ${upstream.status}: ${text.slice(0, 300)}`
+        error: info.logDetail, reserved
       })
-      res.status(upstream.status)
-      try { return res.json(JSON.parse(text)) } catch { return res.send(text) }
+      return openaiError(res, upstream.status, info.clientMessage, info.code)
     }
 
     markChannelSuccess(channel.id)
-    if (isStream) return relayStream(req, res, upstream, channel, model, body, start)
-    return relayJson(req, res, upstream, channel, model, body, start)
+    if (isStream) return relayStream(req, res, upstream, channel, model, body, start, reserved)
+    return relayJson(req, res, upstream, channel, model, body, start, reserved)
   }
 
-  return openaiError(res, 502, `所有可用渠道均请求失败:${lastError}`, 'upstream_error')
+  // 所有渠道都没成功:冻结的额度必须原样退回,否则用户白白被扣
+  releaseQuota(req.relayUser.id, reserved)
+  return openaiError(res, 502, `所有可用渠道均请求失败:${redactSecrets(lastError)}`, 'upstream_error')
 }
 
-async function relayJson(req, res, upstream, channel, model, body, start) {
+async function relayJson(req, res, upstream, channel, model, body, start, reserved = 0) {
   let raw
   try {
     raw = await upstream.json()
   } catch {
+    releaseQuota(req.relayUser.id, reserved)
     return openaiError(res, 502, '上游返回了无法解析的响应', 'upstream_error')
   }
   const data = convertResponse(channel, model, raw)
@@ -281,12 +391,12 @@ async function relayJson(req, res, upstream, channel, model, body, start) {
   settle({
     user: req.relayUser, token: req.relayToken, channel, model,
     promptTokens, completionTokens,
-    latency: Date.now() - start, stream: false, ok: true
+    latency: Date.now() - start, stream: false, ok: true, reserved
   })
   res.status(200).json(data)
 }
 
-async function relayStream(req, res, upstream, channel, model, body, start) {
+async function relayStream(req, res, upstream, channel, model, body, start, reserved = 0) {
   res.status(200)
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
   res.setHeader('Cache-Control', 'no-cache')
@@ -365,7 +475,7 @@ async function relayStream(req, res, upstream, channel, model, body, start) {
   settle({
     user: req.relayUser, token: req.relayToken, channel, model,
     promptTokens, completionTokens,
-    latency: Date.now() - start, stream: true, ok: true
+    latency: Date.now() - start, stream: true, ok: true, reserved
   })
 }
 

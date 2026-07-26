@@ -181,7 +181,13 @@ const defaultSettings = {
   cny_rate: '7.3',
   topup_min: '1',
   bark_key: '',
-  bark_server: 'https://api.day.app'
+  bark_server: 'https://api.day.app',
+  // 风控:请求前预扣费时假定的输出 token 数(请求自带 max_tokens 时以它为准)
+  precharge_completion_tokens: '4096',
+  // 冻结额度的安全边际,覆盖上游分词口径差异
+  precharge_margin: '1.2',
+  // 单用户在途请求上限,0 = 不限
+  max_concurrent_per_user: '10'
 }
 const insSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
 for (const [k, v] of Object.entries(defaultSettings)) insSetting.run(k, v)

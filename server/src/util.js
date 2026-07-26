@@ -72,3 +72,23 @@ export function estimateTokens(text) {
 export function badRequest(res, message) {
   return res.status(400).json({ success: false, message })
 }
+
+// 上游返回的错误里经常原样带着我们的 Key(例如 OpenAI 的
+// "Incorrect API key provided: sk-xxxx"),这些内容既会回给终端用户、
+// 也会写进调用日志,必须先抹掉密钥再落地。
+const SECRET_PATTERNS = [
+  /\b(sk-ant-[A-Za-z0-9_-]{4})[A-Za-z0-9_-]+/g,   // Anthropic
+  /\b(sk-proj-[A-Za-z0-9_-]{4})[A-Za-z0-9_-]+/g,  // OpenAI 项目密钥
+  /\b(sk-[A-Za-z0-9_-]{4})[A-Za-z0-9_-]+/g,       // OpenAI 及绝大多数兼容站
+  /\b(AIza[A-Za-z0-9_-]{4})[A-Za-z0-9_-]+/g,      // Google
+  /\b(gsk_[A-Za-z0-9]{4})[A-Za-z0-9]+/g,          // Groq
+  /\b(xai-[A-Za-z0-9]{4})[A-Za-z0-9]+/g           // xAI
+]
+
+export function redactSecrets(text) {
+  let out = String(text ?? '')
+  for (const re of SECRET_PATTERNS) out = out.replace(re, '$1***')
+  // 兜底:JSON / query 里显式的 key 字段
+  out = out.replace(/("?(?:api[_-]?key|authorization|x-api-key)"?\s*[:=]\s*"?)([^"'\s,&}]{6,})/gi, '$1***')
+  return out
+}

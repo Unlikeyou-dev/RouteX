@@ -9,7 +9,9 @@ const PUBLIC_KEYS = ['site_name', 'announcement']
 const ADMIN_KEYS = [
   'site_name', 'announcement', 'price_ratio', 'signup_bonus', 'aff_rebate_percent',
   // 收款与推送
-  'pay_qr_alipay', 'pay_qr_wechat', 'cny_rate', 'topup_min', 'bark_key', 'bark_server'
+  'pay_qr_alipay', 'pay_qr_wechat', 'cny_rate', 'topup_min', 'bark_key', 'bark_server',
+  // 风控
+  'precharge_completion_tokens', 'precharge_margin', 'max_concurrent_per_user'
 ]
 
 // 公开站点信息(落地页使用)
@@ -23,7 +25,10 @@ router.get('/', authRequired, adminRequired, (req, res) => {
   res.json({ success: true, data })
 })
 
-const NUMERIC_KEYS = ['price_ratio', 'signup_bonus', 'aff_rebate_percent', 'cny_rate', 'topup_min']
+const NUMERIC_KEYS = [
+  'price_ratio', 'signup_bonus', 'aff_rebate_percent', 'cny_rate', 'topup_min',
+  'precharge_completion_tokens', 'precharge_margin', 'max_concurrent_per_user'
+]
 // 收款码允许 http(s) 图片地址或 data URI(前端本地选图后转 base64,省掉一套上传接口)
 const MAX_QR_LEN = 4 * 1024 * 1024
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Save, Plus, Trash2, Upload, Bell, X } from 'lucide-react'
+import { Save, Plus, Trash2, Upload, Bell, X, ShieldCheck } from 'lucide-react'
 import { api } from '../api.js'
 import { toast, useAuth } from '../store.jsx'
 import { PageHeader, Spinner } from '../components/ui.jsx'
@@ -195,6 +195,58 @@ export default function Settings() {
             </div>
             <p className="text-xs leading-5 text-ink-mute">
               最终价格 = 基础价 × 计费倍率 × 用户分组倍率;被邀请人每次兑换充值,邀请人按比例得返利。
+            </p>
+            <button className="btn-primary" onClick={save} disabled={busy}>
+              <Save size={15} /> 保存设置
+            </button>
+          </div>
+
+          <div className="card space-y-4 p-6">
+            <h3 className="card-title flex items-center gap-2">
+              <ShieldCheck size={16} className="text-brand-600" /> 风控
+            </h3>
+            <p className="-mt-2 text-xs leading-5 text-ink-mute">
+              每次调用会在请求前按「输入 token + 预估输出 token」先冻结额度,响应后按实际用量多退少补。
+              这是防止用户并发白嫖的关键,无法关闭。
+            </p>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="label">输出上限 tokens</label>
+                <input
+                  className="input"
+                  type="number"
+                  step="256"
+                  min="0"
+                  value={form.precharge_completion_tokens}
+                  onChange={set('precharge_completion_tokens')}
+                />
+              </div>
+              <div>
+                <label className="label">安全边际</label>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.05"
+                  min="1"
+                  value={form.precharge_margin}
+                  onChange={set('precharge_margin')}
+                />
+              </div>
+              <div>
+                <label className="label">并发上限</label>
+                <input
+                  className="input"
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={form.max_concurrent_per_user}
+                  onChange={set('max_concurrent_per_user')}
+                />
+              </div>
+            </div>
+            <p className="text-xs leading-5 text-ink-mute">
+              请求未指定 max_tokens 时,我们会按「输出上限」注入给上游,让冻结额度成为真正的上界。
+              安全边际用于兜住上游分词口径与我们的差异(1.2 = 上浮 20%)。并发上限 0 表示不限。
             </p>
             <button className="btn-primary" onClick={save} disabled={busy}>
               <Save size={15} /> 保存设置
