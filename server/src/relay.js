@@ -1,13 +1,46 @@
 import { Router } from 'express'
+import { encode } from 'gpt-tokenizer'
 import { db, now } from './db.js'
 import { computeCost } from './pricing.js'
-import { estimateTokens } from './util.js'
 import { RELAY_TIMEOUT_MS } from './config.js'
+import { buildUpstreamRequest, convertResponse, createStreamTransformer } from './adapters.js'
 
 const router = Router()
 
+// 连续失败 3 次熔断,由健康检查定时探活恢复
+const FAIL_THRESHOLD = 3
+
 function openaiError(res, status, message, code = null) {
   return res.status(status).json({ error: { message, type: 'routex_error', code } })
+}
+
+// ---- 精确 token 计数(gpt-tokenizer / o200k)----
+export function countText(text) {
+  if (!text) return 0
+  try {
+    return encode(String(text)).length
+  } catch {
+    return Math.ceil(String(text).length / 3.5)
+  }
+}
+
+export function countChatTokens(messages) {
+  if (!Array.isArray(messages)) return 0
+  let total = 3 // 回复引导
+  for (const m of messages) {
+    total += 4 // 每条消息封装开销
+    total += countText(m.role)
+    total += countText(
+      typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')
+    )
+  }
+  return total
+}
+
+function countPromptTokens(body) {
+  if (Array.isArray(body.messages)) return countChatTokens(body.messages)
+  const raw = body.input ?? body.prompt ?? ''
+  return countText(typeof raw === 'string' ? raw : JSON.stringify(raw))
 }
 
 // ---- API Key 鉴权 ----
@@ -29,14 +62,17 @@ function relayAuth(req, res, next) {
   next()
 }
 
-// ---- 渠道选择:同优先级内按权重随机 ----
-function pickChannels(model) {
-  const rows = db.prepare('SELECT * FROM channels WHERE status = 1 ORDER BY priority DESC').all()
-  const candidates = rows.filter(c =>
-    c.models.split(',').map(m => m.trim()).includes(model)
-  )
+// ---- 渠道选择 ----
+// 原生协议渠道只支持 chat;embeddings / completions 仅路由到 OpenAI 兼容渠道
+function pickChannels(model, path) {
+  const rows = db
+    .prepare('SELECT * FROM channels WHERE status = 1 AND auto_disabled = 0 ORDER BY priority DESC')
+    .all()
+  const candidates = rows.filter(c => {
+    if (path !== '/chat/completions' && c.type !== 'openai') return false
+    return c.models.split(',').map(m => m.trim()).includes(model)
+  })
   if (candidates.length === 0) return []
-  // 按优先级分组,组内加权洗牌,整体保持优先级次序,作为故障转移顺序
   const groups = new Map()
   for (const c of candidates) {
     if (!groups.has(c.priority)) groups.set(c.priority, [])
@@ -59,6 +95,13 @@ function pickChannels(model) {
   return ordered
 }
 
+// 多 Key 渠道:按换行/逗号分隔,随机取一把分摊上游限额
+export function pickKey(channel) {
+  const keys = channel.api_key.split(/[\n,]/).map(k => k.trim()).filter(Boolean)
+  if (keys.length <= 1) return keys[0] || channel.api_key
+  return keys[Math.floor(Math.random() * keys.length)]
+}
+
 function mapModel(channel, model) {
   try {
     const mapping = JSON.parse(channel.model_mapping || '{}')
@@ -68,14 +111,33 @@ function mapModel(channel, model) {
   }
 }
 
+// ---- 渠道健康记账(熔断)----
+export function markChannelFailure(channelId, reason) {
+  const row = db.prepare('SELECT fail_count FROM channels WHERE id = ?').get(channelId)
+  if (!row) return
+  const fails = row.fail_count + 1
+  if (fails >= FAIL_THRESHOLD) {
+    db.prepare('UPDATE channels SET fail_count = ?, auto_disabled = 1, last_test_ok = 0, last_test_at = ? WHERE id = ?')
+      .run(fails, now(), channelId)
+    console.warn(`[RouteX] 渠道 #${channelId} 连续失败 ${fails} 次,已熔断(${reason})`)
+  } else {
+    db.prepare('UPDATE channels SET fail_count = ? WHERE id = ?').run(fails, channelId)
+  }
+}
+
+export function markChannelSuccess(channelId) {
+  db.prepare('UPDATE channels SET fail_count = 0, auto_disabled = 0 WHERE id = ? AND (fail_count > 0 OR auto_disabled = 1)')
+    .run(channelId)
+}
+
 // ---- 计费落账 ----
 function settle({ user, token, channel, model, promptTokens, completionTokens, latency, stream, ok, error }) {
-  const cost = ok ? computeCost(model, promptTokens, completionTokens) : 0
+  const cost = ok ? computeCost(model, promptTokens, completionTokens, user.group_name) : 0
   const tx = db.transaction(() => {
     if (ok && cost > 0) {
-      db.prepare('UPDATE users SET quota = MAX(0, quota - ?), used_quota = used_quota + ?, request_count = request_count + 1 WHERE id = ?')
+      db.prepare('UPDATE users SET quota = MAX(0, ROUND(quota - ?, 6)), used_quota = ROUND(used_quota + ?, 6), request_count = request_count + 1 WHERE id = ?')
         .run(cost, cost, user.id)
-      db.prepare('UPDATE tokens SET used_quota = used_quota + ?, last_used_at = ? WHERE id = ?')
+      db.prepare('UPDATE tokens SET used_quota = ROUND(used_quota + ?, 6), last_used_at = ? WHERE id = ?')
         .run(cost, now(), token.id)
     } else {
       db.prepare('UPDATE users SET request_count = request_count + 1 WHERE id = ?').run(user.id)
@@ -94,7 +156,7 @@ function settle({ user, token, channel, model, promptTokens, completionTokens, l
   return cost
 }
 
-// ---- GET /v1/models:聚合所有启用渠道的模型 ----
+// ---- GET /v1/models ----
 router.get('/models', relayAuth, (req, res) => {
   const channels = db.prepare('SELECT models FROM channels WHERE status = 1').all()
   const set = new Set()
@@ -117,7 +179,7 @@ async function handleRelay(req, res, path) {
   const model = String(body.model || '').trim()
   if (!model) return openaiError(res, 400, '请求缺少 model 字段', 'invalid_request')
 
-  const candidates = pickChannels(model)
+  const candidates = pickChannels(model, path)
   if (candidates.length === 0) {
     return openaiError(res, 503, `当前没有可用渠道支持模型 ${model}`, 'no_available_channel')
   }
@@ -128,33 +190,32 @@ async function handleRelay(req, res, path) {
 
   for (const channel of candidates.slice(0, 3)) {
     const upstreamModel = mapModel(channel, model)
-    const upstreamBody = { ...body, model: upstreamModel }
-    if (isStream) {
-      // 请求上游在流末尾附带 usage,便于精确计费
-      upstreamBody.stream_options = { ...(body.stream_options || {}), include_usage: true }
-    }
+    const apiKey = pickKey(channel)
+    const { url, headers, payload } = buildUpstreamRequest(channel, apiKey, path, body, upstreamModel, isStream)
 
     let upstream
     try {
-      upstream = await fetch(`${channel.base_url}/v1${path}`, {
+      upstream = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${channel.api_key}` },
-        body: JSON.stringify(upstreamBody),
+        headers,
+        body: JSON.stringify(payload),
         signal: AbortSignal.timeout(RELAY_TIMEOUT_MS)
       })
     } catch (e) {
       lastError = `渠道 #${channel.id} 连接失败: ${e.message}`
+      markChannelFailure(channel.id, e.message)
       continue
     }
 
-    // 5xx / 429 视为渠道故障,转移到下一渠道
+    // 5xx / 429 视为渠道故障:记失败并转移下一渠道
     if (upstream.status >= 500 || upstream.status === 429) {
       lastError = `渠道 #${channel.id} 返回 HTTP ${upstream.status}`
+      markChannelFailure(channel.id, `HTTP ${upstream.status}`)
       await upstream.body?.cancel().catch(() => {})
       continue
     }
 
-    // 4xx 原样透传给客户端(请求本身的问题),不计费
+    // 4xx 原样透传(请求本身的问题),不计费不熔断
     if (!upstream.ok) {
       const text = await upstream.text().catch(() => '')
       settle({
@@ -167,6 +228,7 @@ async function handleRelay(req, res, path) {
       try { return res.json(JSON.parse(text)) } catch { return res.send(text) }
     }
 
+    markChannelSuccess(channel.id)
     if (isStream) return relayStream(req, res, upstream, channel, model, body, start)
     return relayJson(req, res, upstream, channel, model, body, start)
   }
@@ -174,27 +236,18 @@ async function handleRelay(req, res, path) {
   return openaiError(res, 502, `所有可用渠道均请求失败:${lastError}`, 'upstream_error')
 }
 
-function promptTextOf(body) {
-  if (Array.isArray(body.messages)) {
-    return body.messages.map(m => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''))).join('\n')
-  }
-  if (body.input) return typeof body.input === 'string' ? body.input : JSON.stringify(body.input)
-  if (body.prompt) return typeof body.prompt === 'string' ? body.prompt : JSON.stringify(body.prompt)
-  return ''
-}
-
 async function relayJson(req, res, upstream, channel, model, body, start) {
-  let data
+  let raw
   try {
-    data = await upstream.json()
+    raw = await upstream.json()
   } catch {
     return openaiError(res, 502, '上游返回了无法解析的响应', 'upstream_error')
   }
+  const data = convertResponse(channel, model, raw)
   const usage = data.usage || {}
-  const promptTokens = usage.prompt_tokens ?? estimateTokens(promptTextOf(body))
-  const completionTokens =
-    usage.completion_tokens ??
-    estimateTokens(data.choices?.map(c => c.message?.content || c.text || '').join('') || '')
+  const promptTokens = usage.prompt_tokens || countPromptTokens(body)
+  const completionTokens = usage.completion_tokens ??
+    countText(data.choices?.map(c => c.message?.content || c.text || '').join('') || '')
   settle({
     user: req.relayUser, token: req.relayToken, channel, model,
     promptTokens, completionTokens,
@@ -213,13 +266,18 @@ async function relayStream(req, res, upstream, channel, model, body, start) {
 
   const reader = upstream.body.getReader()
   const decoder = new TextDecoder()
+  const native = channel.type !== 'openai'
+  const transformer = native ? createStreamTransformer(channel, model) : null
+
   let sseBuffer = ''
   let usage = null
-  let completionChars = 0
+  let deltaText = ''
+  const DELTA_CAP = 1_000_000 // 兜底计数的累计文本上限
   let clientGone = false
   res.on('close', () => { clientGone = true })
 
-  const scanLine = line => {
+  // OpenAI 透传模式:旁路解析 usage 与增量文本
+  const scanOpenAI = line => {
     if (!line.startsWith('data:')) return
     const payload = line.slice(5).trim()
     if (!payload || payload === '[DONE]') return
@@ -227,8 +285,8 @@ async function relayStream(req, res, upstream, channel, model, body, start) {
       const obj = JSON.parse(payload)
       if (obj.usage) usage = obj.usage
       const delta = obj.choices?.[0]?.delta?.content
-      if (typeof delta === 'string') completionChars += delta.length
-    } catch { /* 非 JSON 数据块,忽略 */ }
+      if (typeof delta === 'string' && deltaText.length < DELTA_CAP) deltaText += delta
+    } catch { /* 忽略非 JSON 块 */ }
   }
 
   try {
@@ -239,20 +297,41 @@ async function relayStream(req, res, upstream, channel, model, body, start) {
         await reader.cancel().catch(() => {})
         break
       }
-      res.write(value)
+      if (!native) res.write(value)
       sseBuffer += decoder.decode(value, { stream: true })
       let nl
       while ((nl = sseBuffer.indexOf('\n')) >= 0) {
-        scanLine(sseBuffer.slice(0, nl).trimEnd())
+        const line = sseBuffer.slice(0, nl).trimEnd()
         sseBuffer = sseBuffer.slice(nl + 1)
+        if (native) {
+          const out = transformer.feed(line)
+          if (out) res.write(out)
+        } else {
+          scanOpenAI(line)
+        }
       }
     }
   } catch { /* 上游中断,按已收到的内容计费 */ }
-  if (sseBuffer) scanLine(sseBuffer.trimEnd())
+
+  if (sseBuffer) {
+    if (native) {
+      const out = transformer.feed(sseBuffer.trimEnd())
+      if (out) res.write(out)
+    } else {
+      scanOpenAI(sseBuffer.trimEnd())
+    }
+  }
+  if (native && !clientGone) res.write(transformer.finish())
   res.end()
 
-  const promptTokens = usage?.prompt_tokens ?? estimateTokens(promptTextOf(body))
-  const completionTokens = usage?.completion_tokens ?? Math.max(1, Math.ceil(completionChars / 3.5))
+  let nativeChars = 0
+  if (native) {
+    usage = transformer.usage()
+    nativeChars = transformer.chars()
+  }
+  const promptTokens = usage?.prompt_tokens || countPromptTokens(body)
+  const completionTokens = usage?.completion_tokens ??
+    (native ? Math.max(1, Math.ceil(nativeChars / 3.5)) : Math.max(1, countText(deltaText)))
   settle({
     user: req.relayUser, token: req.relayToken, channel, model,
     promptTokens, completionTokens,

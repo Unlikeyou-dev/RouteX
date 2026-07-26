@@ -5,7 +5,7 @@ import { authRequired, adminRequired } from '../middleware/auth.js'
 const router = Router()
 
 const PUBLIC_KEYS = ['site_name', 'announcement']
-const ADMIN_KEYS = ['site_name', 'announcement', 'price_ratio', 'signup_bonus']
+const ADMIN_KEYS = ['site_name', 'announcement', 'price_ratio', 'signup_bonus', 'aff_rebate_percent']
 
 // 公开站点信息(落地页使用)
 router.get('/public', (req, res) => {
@@ -18,7 +18,7 @@ router.get('/', authRequired, adminRequired, (req, res) => {
   res.json({ success: true, data })
 })
 
-const NUMERIC_KEYS = ['price_ratio', 'signup_bonus']
+const NUMERIC_KEYS = ['price_ratio', 'signup_bonus', 'aff_rebate_percent']
 
 router.put('/', authRequired, adminRequired, (req, res) => {
   for (const key of NUMERIC_KEYS) {

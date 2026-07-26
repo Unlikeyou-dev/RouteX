@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs'
 import { db, now, getSetting } from '../db.js'
 import { signToken, publicUser } from '../middleware/auth.js'
 import { rateLimit } from '../middleware/ratelimit.js'
-import { badRequest } from '../util.js'
+import { badRequest, genInviteCode } from '../util.js'
 
 const router = Router()
 
@@ -12,15 +12,27 @@ const registerLimit = rateLimit({ windowMs: 3_600_000, max: 5, prefix: 'register
 const loginLimit = rateLimit({ windowMs: 300_000, max: 10, prefix: 'login' })
 
 router.post('/register', registerLimit, (req, res) => {
-  const { username, password, email } = req.body || {}
+  const { username, password, email, aff } = req.body || {}
   if (!username || !/^[\w-]{3,30}$/.test(username)) return badRequest(res, '用户名需为 3-30 位字母、数字、下划线')
   if (!password || password.length < 6) return badRequest(res, '密码至少 6 位')
   const exists = db.prepare('SELECT id FROM users WHERE username = ?').get(username)
   if (exists) return badRequest(res, '用户名已被占用')
   const bonus = Number(getSetting('signup_bonus', '0')) || 0
+
+  // 邀请码归因(可选,无效则静默忽略)
+  let inviter = null
+  if (aff) {
+    inviter = db.prepare('SELECT id FROM users WHERE invite_code = ?').get(String(aff).trim()) || null
+  }
+
   const info = db
-    .prepare('INSERT INTO users (username, password_hash, email, quota, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(username, bcrypt.hashSync(password, 10), email || null, bonus, now())
+    .prepare(
+      'INSERT INTO users (username, password_hash, email, quota, invite_code, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    )
+    .run(username, bcrypt.hashSync(password, 10), email || null, bonus, genInviteCode(), inviter?.id || null, now())
+  if (inviter) {
+    db.prepare('UPDATE users SET aff_count = aff_count + 1 WHERE id = ?').run(inviter.id)
+  }
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid)
   res.json({ success: true, data: { token: signToken(user), user: publicUser(user) } })
 })

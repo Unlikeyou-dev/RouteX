@@ -38,8 +38,12 @@ export function getPrice(model) {
   return FALLBACK_PRICE
 }
 
-export function computeCost(model, promptTokens, completionTokens) {
+import { usd } from './util.js'
+import { groupRatio } from './db.js'
+
+// 最终价 = 基础价 × 站点倍率 × 用户分组倍率,收敛到微美元精度
+export function computeCost(model, promptTokens, completionTokens, group = 'default') {
   const [inp, out] = getPrice(model)
   const ratio = Number(getSetting('price_ratio', '1')) || 1
-  return ((promptTokens * inp + completionTokens * out) / 1_000_000) * ratio
+  return usd(((promptTokens * inp + completionTokens * out) / 1_000_000) * ratio * groupRatio(group))
 }

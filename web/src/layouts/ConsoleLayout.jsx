@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate, Navigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, KeyRound, ScrollText, Boxes, Wallet, Waypoints,
-  Users, Ticket, Settings, LogOut, BookOpen, ShieldCheck
+  Users, Ticket, Settings, LogOut, BookOpen, ShieldCheck, Menu
 } from 'lucide-react'
 import Logo from '../components/Logo.jsx'
 import { Toaster } from '../components/ui.jsx'
@@ -47,6 +48,8 @@ export default function ConsoleLayout() {
   const { user, loading, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
+  const [mobileOpen, setMobileOpen] = useState(false)
+  useEffect(() => { setMobileOpen(false) }, [pathname])
   const current = [...userNav, ...adminNav].find(i =>
     i.end ? pathname === i.to : pathname.startsWith(i.to) && i.to !== '/console'
   ) || userNav[0]
@@ -59,8 +62,17 @@ export default function ConsoleLayout() {
 
   return (
     <div className="flex min-h-screen bg-bg">
-      {/* 侧边栏 */}
-      <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-line bg-card">
+      {/* 移动端遮罩 */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-30 bg-ink/30 lg:hidden" onClick={() => setMobileOpen(false)} />
+      )}
+
+      {/* 侧边栏:桌面常驻,移动端抽屉 */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-line bg-card transition-transform duration-200 lg:translate-x-0 ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
         <div className="flex h-16 items-center px-5">
           <NavLink to="/">
             <Logo size={30} />
@@ -105,9 +117,16 @@ export default function ConsoleLayout() {
       </aside>
 
       {/* 主区域 */}
-      <div className="ml-60 flex-1">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-line bg-card/90 px-6 backdrop-blur">
+      <div className="flex-1 lg:ml-60">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-line bg-card/90 px-4 backdrop-blur sm:px-6">
           <div className="flex items-center gap-2 text-[13px]">
+            <button
+              className="mr-1 rounded-lg p-2 text-ink-dim hover:bg-panel lg:hidden"
+              onClick={() => setMobileOpen(true)}
+              aria-label="打开菜单"
+            >
+              <Menu size={18} />
+            </button>
             <span className="text-ink-mute">控制台</span>
             <span className="text-line">/</span>
             <span className="font-medium text-ink">{current.label}</span>
@@ -120,7 +139,7 @@ export default function ConsoleLayout() {
             <span className="font-semibold text-ink">{fmtUSD(user.quota, 2)}</span>
           </NavLink>
         </header>
-        <main className="mx-auto max-w-6xl px-6 py-8">
+        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
           <Outlet />
         </main>
       </div>

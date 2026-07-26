@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { db } from '../db.js'
 import { authRequired, adminRequired, publicUser } from '../middleware/auth.js'
-import { badRequest } from '../util.js'
+import { badRequest, usd } from '../util.js'
 
 const router = Router()
 router.use(authRequired, adminRequired)
@@ -14,14 +14,19 @@ router.get('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const row = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
   if (!row) return badRequest(res, '用户不存在')
-  const { quota, role, status } = req.body || {}
+  const { quota, role, status, group_name } = req.body || {}
   if (row.id === req.user.id && (status === 0 || (role && role !== 'admin'))) {
     return badRequest(res, '不能封禁或降级自己')
   }
-  db.prepare('UPDATE users SET quota = ?, role = ?, status = ? WHERE id = ?').run(
-    quota !== undefined ? Number(quota) || 0 : row.quota,
+  if (group_name !== undefined) {
+    const g = db.prepare('SELECT name FROM groups WHERE name = ?').get(group_name)
+    if (!g) return badRequest(res, '分组不存在')
+  }
+  db.prepare('UPDATE users SET quota = ?, role = ?, status = ?, group_name = ? WHERE id = ?').run(
+    quota !== undefined ? usd(quota) : row.quota,
     role === 'admin' || role === 'user' ? role : row.role,
     status !== undefined ? (status ? 1 : 0) : row.status,
+    group_name ?? row.group_name,
     row.id
   )
   res.json({ success: true, data: publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(row.id)) })

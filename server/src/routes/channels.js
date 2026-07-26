@@ -2,9 +2,12 @@ import { Router } from 'express'
 import { db, now } from '../db.js'
 import { authRequired, adminRequired } from '../middleware/auth.js'
 import { badRequest } from '../util.js'
+import { testChannel } from '../health.js'
 
 const router = Router()
 router.use(authRequired, adminRequired)
+
+const TYPES = ['openai', 'anthropic', 'gemini']
 
 router.get('/', (req, res) => {
   const rows = db.prepare('SELECT * FROM channels ORDER BY priority DESC, id').all()
@@ -12,14 +15,22 @@ router.get('/', (req, res) => {
 })
 
 router.post('/', (req, res) => {
-  const { name, base_url, api_key, models = '', model_mapping = '{}', priority = 0, weight = 1 } = req.body || {}
+  const {
+    name, base_url, api_key, models = '', model_mapping = '{}',
+    priority = 0, weight = 1, type = 'openai'
+  } = req.body || {}
   if (!name || !base_url || !api_key) return badRequest(res, '名称、Base URL、密钥均为必填')
+  if (!TYPES.includes(type)) return badRequest(res, '未知的渠道类型')
   try { JSON.parse(model_mapping || '{}') } catch { return badRequest(res, '模型映射需为合法 JSON') }
   const info = db
     .prepare(
-      'INSERT INTO channels (name, base_url, api_key, models, model_mapping, priority, weight, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      `INSERT INTO channels (name, base_url, api_key, models, model_mapping, priority, weight, type, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(name, base_url.replace(/\/+$/, ''), api_key, models, model_mapping || '{}', Number(priority) || 0, Number(weight) || 1, now())
+    .run(
+      name, base_url.replace(/\/+$/, ''), api_key, models, model_mapping || '{}',
+      Number(priority) || 0, Number(weight) || 1, type, now()
+    )
   res.json({ success: true, data: db.prepare('SELECT * FROM channels WHERE id = ?').get(info.lastInsertRowid) })
 })
 
@@ -27,11 +38,17 @@ router.put('/:id', (req, res) => {
   const row = db.prepare('SELECT * FROM channels WHERE id = ?').get(req.params.id)
   if (!row) return badRequest(res, '渠道不存在')
   const b = req.body || {}
+  if (b.type !== undefined && !TYPES.includes(b.type)) return badRequest(res, '未知的渠道类型')
   if (b.model_mapping !== undefined) {
     try { JSON.parse(b.model_mapping || '{}') } catch { return badRequest(res, '模型映射需为合法 JSON') }
   }
+  // 手动启用时清除熔断状态,给渠道重新上场的机会
+  const enabling = b.status !== undefined && b.status && row.status !== 1
   db.prepare(
-    `UPDATE channels SET name=?, base_url=?, api_key=?, models=?, model_mapping=?, priority=?, weight=?, status=? WHERE id=?`
+    `UPDATE channels SET name=?, base_url=?, api_key=?, models=?, model_mapping=?, priority=?, weight=?, type=?, status=?,
+     auto_disabled = CASE WHEN ? THEN 0 ELSE auto_disabled END,
+     fail_count = CASE WHEN ? THEN 0 ELSE fail_count END
+     WHERE id=?`
   ).run(
     b.name ?? row.name,
     (b.base_url ?? row.base_url).replace(/\/+$/, ''),
@@ -40,7 +57,10 @@ router.put('/:id', (req, res) => {
     b.model_mapping ?? row.model_mapping,
     b.priority !== undefined ? Number(b.priority) || 0 : row.priority,
     b.weight !== undefined ? Number(b.weight) || 1 : row.weight,
+    b.type ?? row.type,
     b.status !== undefined ? (b.status ? 1 : 0) : row.status,
+    enabling ? 1 : 0,
+    enabling ? 1 : 0,
     row.id
   )
   res.json({ success: true, data: db.prepare('SELECT * FROM channels WHERE id = ?').get(row.id) })
@@ -51,34 +71,20 @@ router.delete('/:id', (req, res) => {
   res.json({ success: true })
 })
 
-// 连通性测试:向上游发起一次最小 chat 请求
+// 手动测活:成功则同时解除熔断
 router.post('/:id/test', async (req, res) => {
   const row = db.prepare('SELECT * FROM channels WHERE id = ?').get(req.params.id)
   if (!row) return badRequest(res, '渠道不存在')
-  const model = (req.body?.model || row.models.split(',')[0] || 'gpt-4o-mini').trim()
-  const start = Date.now()
-  let ok = 0
-  let message = ''
-  try {
-    const resp = await fetch(`${row.base_url}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${row.api_key}` },
-      body: JSON.stringify({ model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 }),
-      signal: AbortSignal.timeout(20_000)
-    })
-    ok = resp.ok ? 1 : 0
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => '')
-      message = `HTTP ${resp.status}: ${text.slice(0, 200)}`
-    }
-  } catch (e) {
-    message = e.message || '连接失败'
+  const result = await testChannel(row, req.body?.model)
+  if (result.ok) {
+    db.prepare(
+      'UPDATE channels SET last_test_at = ?, last_test_ok = 1, latency_ms = ?, fail_count = 0, auto_disabled = 0 WHERE id = ?'
+    ).run(now(), result.latency, row.id)
+  } else {
+    db.prepare('UPDATE channels SET last_test_at = ?, last_test_ok = 0, latency_ms = ? WHERE id = ?')
+      .run(now(), result.latency, row.id)
   }
-  const latency = Date.now() - start
-  db.prepare('UPDATE channels SET last_test_at = ?, last_test_ok = ?, latency_ms = ? WHERE id = ?').run(
-    now(), ok, latency, row.id
-  )
-  res.json({ success: true, data: { ok: !!ok, latency_ms: latency, message } })
+  res.json({ success: true, data: { ok: result.ok, latency_ms: result.latency, message: result.message } })
 })
 
 export default router

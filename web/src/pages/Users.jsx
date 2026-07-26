@@ -6,22 +6,29 @@ import { Modal, PageHeader, Spinner, StatusChip } from '../components/ui.jsx'
 
 export default function Users() {
   const [rows, setRows] = useState(null)
+  const [groups, setGroups] = useState([])
   const [modal, setModal] = useState(null)
-  const [form, setForm] = useState({ quota: 0, role: 'user' })
+  const [form, setForm] = useState({ quota: 0, role: 'user', group_name: 'default' })
   const [busy, setBusy] = useState(false)
 
   const load = () => api('/users').then(setRows).catch(e => toast(e.message, 'error'))
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    api('/groups').then(setGroups).catch(() => {})
+  }, [])
 
   const openEdit = row => {
-    setForm({ quota: row.quota, role: row.role })
+    setForm({ quota: row.quota, role: row.role, group_name: row.group_name || 'default' })
     setModal(row)
   }
 
   const submit = async () => {
     setBusy(true)
     try {
-      await api(`/users/${modal.id}`, { method: 'PUT', body: { quota: Number(form.quota), role: form.role } })
+      await api(`/users/${modal.id}`, {
+        method: 'PUT',
+        body: { quota: Number(form.quota), role: form.role, group_name: form.group_name }
+      })
       toast('用户已更新', 'success')
       setModal(null)
       load()
@@ -67,6 +74,7 @@ export default function Users() {
                   <th className="th-r">ID</th>
                   <th className="th">用户名</th>
                   <th className="th">角色</th>
+                  <th className="th">分组</th>
                   <th className="th-r">余额</th>
                   <th className="th-r">已消耗</th>
                   <th className="th-r">请求数</th>
@@ -86,6 +94,9 @@ export default function Users() {
                       ) : (
                         <span className="chip bg-panel text-ink-dim">用户</span>
                       )}
+                    </td>
+                    <td className="td">
+                      <span className="chip bg-panel text-ink-dim">{row.group_name || 'default'}</span>
                     </td>
                     <td className="td-r">{fmtUSD(row.quota, 2)}</td>
                     <td className="td-r">{fmtUSD(row.used_quota)}</td>
@@ -124,12 +135,22 @@ export default function Users() {
               onChange={e => setForm(f => ({ ...f, quota: e.target.value }))}
             />
           </div>
-          <div>
-            <label className="label">角色</label>
-            <select className="input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
-              <option value="user">普通用户</option>
-              <option value="admin">管理员</option>
-            </select>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">角色</label>
+              <select className="input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+                <option value="user">普通用户</option>
+                <option value="admin">管理员</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">计费分组</label>
+              <select className="input" value={form.group_name} onChange={e => setForm(f => ({ ...f, group_name: e.target.value }))}>
+                {groups.map(g => (
+                  <option key={g.name} value={g.name}>{g.name}(×{g.ratio})</option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button className="btn-ghost" onClick={() => setModal(null)}>取消</button>

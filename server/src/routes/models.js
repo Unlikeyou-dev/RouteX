@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { db, getSetting } from '../db.js'
+import { db, getSetting, groupRatio } from '../db.js'
 import { authRequired, adminRequired } from '../middleware/auth.js'
 import { getPrice } from '../pricing.js'
 
@@ -12,19 +12,25 @@ router.get('/', authRequired, (req, res) => {
   for (const c of channels) {
     c.models.split(',').map(m => m.trim()).filter(Boolean).forEach(m => available.add(m))
   }
-  const ratio = Number(getSetting('price_ratio', '1')) || 1
+  // 展示价 = 基础价 × 站点倍率 × 当前用户分组倍率
+  const ratio = (Number(getSetting('price_ratio', '1')) || 1) * groupRatio(req.user.group_name)
   const priced = db.prepare('SELECT * FROM model_prices ORDER BY model').all()
   const knownNames = new Set(priced.map(p => p.model))
+  const isAdmin = req.user.role === 'admin'
   const list = priced.map(p => ({
     model: p.model,
     input_price: p.input_price * ratio,
     output_price: p.output_price * ratio,
-    available: available.has(p.model)
+    available: available.has(p.model),
+    ...(isAdmin ? { base_input_price: p.input_price, base_output_price: p.output_price } : {})
   }))
   for (const m of available) {
     if (!knownNames.has(m)) {
       const [inp, out] = getPrice(m)
-      list.push({ model: m, input_price: inp * ratio, output_price: out * ratio, available: true })
+      list.push({
+        model: m, input_price: inp * ratio, output_price: out * ratio, available: true,
+        ...(isAdmin ? { base_input_price: inp, base_output_price: out, fallback: true } : {})
+      })
     }
   }
   list.sort((a, b) => (b.available - a.available) || a.model.localeCompare(b.model))

@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { Loader2 } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Loader2, UserPlus } from 'lucide-react'
 import Logo from '../components/Logo.jsx'
 import { api } from '../api.js'
 import { useAuth } from '../store.jsx'
@@ -9,6 +9,8 @@ export default function AuthShell({ mode }) {
   const isLogin = mode === 'login'
   const navigate = useNavigate()
   const { login } = useAuth()
+  const [params] = useSearchParams()
+  const aff = params.get('aff') || ''
   const [form, setForm] = useState({ username: '', password: '', confirm: '' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -24,7 +26,7 @@ export default function AuthShell({ mode }) {
     try {
       const data = await api(`/auth/${isLogin ? 'login' : 'register'}`, {
         method: 'POST',
-        body: { username: form.username.trim(), password: form.password }
+        body: { username: form.username.trim(), password: form.password, ...(aff && !isLogin ? { aff } : {}) }
       })
       login(data.token, data.user)
       navigate('/console')
@@ -50,6 +52,11 @@ export default function AuthShell({ mode }) {
         </div>
 
         <div className="card p-8">
+          {!isLogin && aff && (
+            <div className="mb-5 flex items-center gap-2 rounded-lg border border-brand-100 bg-brand-50 px-3.5 py-2.5 text-[13px] text-brand-700">
+              <UserPlus size={14} /> 你正在通过好友邀请注册
+            </div>
+          )}
           <form onSubmit={submit} className="space-y-4">
             <div>
               <label className="label">用户名</label>

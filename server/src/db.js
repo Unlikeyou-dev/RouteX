@@ -104,6 +104,43 @@ CREATE TABLE IF NOT EXISTS model_prices (
 
 export const now = () => Math.floor(Date.now() / 1000)
 
+// ---- 增量迁移:为既有库补充新列 ----
+function ensureColumn(table, name, ddl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name)
+  if (!cols.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`)
+}
+ensureColumn('users', 'group_name', "group_name TEXT NOT NULL DEFAULT 'default'")
+ensureColumn('users', 'invite_code', 'invite_code TEXT')
+ensureColumn('users', 'invited_by', 'invited_by INTEGER')
+ensureColumn('users', 'aff_earned', 'aff_earned REAL NOT NULL DEFAULT 0')
+ensureColumn('users', 'aff_count', 'aff_count INTEGER NOT NULL DEFAULT 0')
+ensureColumn('channels', 'type', "type TEXT NOT NULL DEFAULT 'openai'")
+ensureColumn('channels', 'auto_disabled', 'auto_disabled INTEGER NOT NULL DEFAULT 0')
+ensureColumn('channels', 'fail_count', 'fail_count INTEGER NOT NULL DEFAULT 0')
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite ON users(invite_code)')
+
+// 用户分组(计费倍率按组叠加)
+db.exec(`CREATE TABLE IF NOT EXISTS groups (
+  name TEXT PRIMARY KEY,
+  ratio REAL NOT NULL DEFAULT 1
+)`)
+db.prepare('INSERT OR IGNORE INTO groups (name, ratio) VALUES (?, ?)').run('default', 1)
+
+export function groupRatio(name) {
+  const row = db.prepare('SELECT ratio FROM groups WHERE name = ?').get(name || 'default')
+  return row ? row.ratio : 1
+}
+
+// 为存量用户补发邀请码
+{
+  const missing = db.prepare('SELECT id FROM users WHERE invite_code IS NULL').all()
+  if (missing.length) {
+    const crypto = await import('node:crypto')
+    const upd = db.prepare('UPDATE users SET invite_code = ? WHERE id = ?')
+    for (const u of missing) upd.run(crypto.randomBytes(4).toString('hex'), u.id)
+  }
+}
+
 // ---- seed ----
 const userCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c
 if (userCount === 0) {
@@ -126,7 +163,8 @@ const defaultSettings = {
   site_name: 'RouteX',
   announcement: '欢迎使用 RouteX API 中转站,新用户注册即送 $1 体验额度。',
   price_ratio: '1',
-  signup_bonus: '1'
+  signup_bonus: '1',
+  aff_rebate_percent: '10'
 }
 const insSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
 for (const [k, v] of Object.entries(defaultSettings)) insSetting.run(k, v)

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Wallet as WalletIcon, Ticket, CreditCard, Clock } from 'lucide-react'
+import { Wallet as WalletIcon, Ticket, CreditCard, Clock, UserPlus } from 'lucide-react'
 import { api, fmtUSD, fmtTime } from '../api.js'
 import { useAuth, toast } from '../store.jsx'
-import { PageHeader, Modal, Empty } from '../components/ui.jsx'
+import { PageHeader, Modal, Empty, CopyButton } from '../components/ui.jsx'
 
 const AMOUNTS = [5, 10, 30, 50, 100, 200]
 const METHODS = [
@@ -141,6 +141,39 @@ export default function Wallet() {
               ))}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* 邀请返利 */}
+      <div className="card mt-5 p-6">
+        <h3 className="card-title mb-1 flex items-center gap-2">
+          <UserPlus size={17} className="text-brand-600" /> 邀请返利
+        </h3>
+        <p className="mb-5 text-xs text-ink-mute">
+          好友通过你的专属链接注册后,其每次兑换充值你都能按比例获得返利,自动到账。
+        </p>
+        <div className="grid gap-5 sm:grid-cols-3">
+          <div className="sm:col-span-2">
+            <label className="label">你的专属邀请链接</label>
+            <div className="flex items-center gap-2">
+              <input
+                className="input flex-1 font-mono !text-[13px]"
+                readOnly
+                value={`${location.origin}/register?aff=${user?.invite_code || ''}`}
+              />
+              <CopyButton text={`${location.origin}/register?aff=${user?.invite_code || ''}`} className="btn-ghost !p-2.5" />
+            </div>
+          </div>
+          <div className="flex items-end gap-8 sm:justify-end">
+            <div>
+              <div className="text-[22px] font-semibold leading-8 tabular-nums">{user?.aff_count ?? 0}</div>
+              <div className="mt-0.5 text-xs text-ink-mute">已邀请</div>
+            </div>
+            <div>
+              <div className="text-[22px] font-semibold leading-8 tabular-nums text-ok">{fmtUSD(user?.aff_earned ?? 0, 2)}</div>
+              <div className="mt-0.5 text-xs text-ink-mute">累计返利</div>
+            </div>
+          </div>
         </div>
       </div>
 

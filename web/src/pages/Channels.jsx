@@ -6,7 +6,13 @@ import { Modal, PageHeader, Spinner, Empty, StatusChip } from '../components/ui.
 
 const emptyForm = {
   name: '', base_url: '', api_key: '', models: '',
-  model_mapping: '{}', priority: 0, weight: 1
+  model_mapping: '{}', priority: 0, weight: 1, type: 'openai'
+}
+
+const TYPE_META = {
+  openai: { label: 'OpenAI 兼容', cls: 'bg-panel text-ink-dim' },
+  anthropic: { label: 'Claude 原生', cls: 'bg-brand-50 text-brand-700' },
+  gemini: { label: 'Gemini 原生', cls: 'bg-okbg text-ok' }
 }
 
 export default function Channels() {
@@ -27,7 +33,7 @@ export default function Channels() {
     setForm({
       name: row.name, base_url: row.base_url, api_key: row.api_key,
       models: row.models, model_mapping: row.model_mapping,
-      priority: row.priority, weight: row.weight
+      priority: row.priority, weight: row.weight, type: row.type || 'openai'
     })
     setModal({ mode: 'edit', row })
   }
@@ -108,6 +114,7 @@ export default function Channels() {
               <thead className="border-b border-line">
                 <tr>
                   <th className="th">渠道</th>
+                  <th className="th">类型</th>
                   <th className="th">Base URL</th>
                   <th className="th-r">模型数</th>
                   <th className="th-r">优先级 / 权重</th>
@@ -122,6 +129,11 @@ export default function Channels() {
                   return (
                     <tr key={row.id} className="transition hover:bg-panel/60">
                       <td className="td font-medium text-ink">{row.name}</td>
+                      <td className="td">
+                        <span className={`chip ${(TYPE_META[row.type] || TYPE_META.openai).cls}`}>
+                          {(TYPE_META[row.type] || TYPE_META.openai).label}
+                        </span>
+                      </td>
                       <td className="td max-w-[220px] truncate font-mono text-[13px]">{row.base_url}</td>
                       <td className="td-r">{modelCount}</td>
                       <td className="td-r">{row.priority} / {row.weight}</td>
@@ -135,9 +147,13 @@ export default function Channels() {
                         )}
                       </td>
                       <td className="td">
-                        <button onClick={() => toggle(row)}>
-                          <StatusChip ok={row.status === 1} />
-                        </button>
+                        {row.status === 1 && row.auto_disabled === 1 ? (
+                          <span className="chip bg-warnbg text-warn" title="连续失败自动熔断,巡检恢复后自动上线">熔断中</span>
+                        ) : (
+                          <button onClick={() => toggle(row)}>
+                            <StatusChip ok={row.status === 1} />
+                          </button>
+                        )}
                       </td>
                       <td className="td text-right">
                         <button
@@ -177,13 +193,26 @@ export default function Channels() {
               <input className="input" placeholder="例如:某某中转站" value={form.name} onChange={set('name')} autoFocus />
             </div>
             <div>
-              <label className="label">Base URL(不含 /v1)</label>
-              <input className="input font-mono" placeholder="https://api.example.com" value={form.base_url} onChange={set('base_url')} />
+              <label className="label">接口协议</label>
+              <select className="input" value={form.type} onChange={set('type')}>
+                <option value="openai">OpenAI 兼容(中转站/官方)</option>
+                <option value="anthropic">Claude 原生(Anthropic API)</option>
+                <option value="gemini">Gemini 原生(Google API)</option>
+              </select>
             </div>
           </div>
           <div>
-            <label className="label">上游 API Key</label>
-            <input className="input font-mono" placeholder="sk-…" value={form.api_key} onChange={set('api_key')} />
+            <label className="label">Base URL{form.type === 'openai' ? '(不含 /v1)' : ''}</label>
+            <input className="input font-mono" placeholder="https://api.example.com" value={form.base_url} onChange={set('base_url')} />
+          </div>
+          <div>
+            <label className="label">上游 API Key(支持多把,每行一把,请求时随机轮询)</label>
+            <textarea
+              className="input min-h-[56px] resize-y font-mono !text-[13px]"
+              placeholder={'sk-xxxx\nsk-yyyy'}
+              value={form.api_key}
+              onChange={set('api_key')}
+            />
           </div>
           <div>
             <label className="label">支持的模型(逗号分隔)</label>

@@ -36,6 +36,10 @@ export function publicUser(u) {
     used_quota: u.used_quota,
     request_count: u.request_count,
     status: u.status,
-    created_at: u.created_at
+    created_at: u.created_at,
+    group_name: u.group_name || 'default',
+    invite_code: u.invite_code,
+    aff_earned: u.aff_earned || 0,
+    aff_count: u.aff_count || 0
   }
 }

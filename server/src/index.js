@@ -17,6 +17,8 @@ import topupRoutes from './routes/topup.js'
 import usersRoutes from './routes/users.js'
 import settingsRoutes from './routes/settings.js'
 import relayRoutes from './relay.js'
+import groupsRoutes from './routes/groups.js'
+import { startHealthChecker } from './health.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -41,6 +43,7 @@ app.use('/api/redemptions', redemptionRoutes)
 app.use('/api/topup', topupRoutes)
 app.use('/api/users', usersRoutes)
 app.use('/api/settings', settingsRoutes)
+app.use('/api/groups', groupsRoutes)
 
 // OpenAI 兼容中转入口
 app.use('/v1', relayRoutes)
@@ -58,6 +61,8 @@ app.use((err, req, res, next) => {
   console.error('[RouteX]', err)
   res.status(500).json({ success: false, message: '服务器内部错误' })
 })
+
+startHealthChecker()
 
 app.listen(PORT, () => {
   console.log(`[RouteX] listening on http://localhost:${PORT}`)
