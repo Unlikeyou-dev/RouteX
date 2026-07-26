@@ -89,8 +89,8 @@ export default function Tokens() {
                 <tr>
                   <th className="th">名称</th>
                   <th className="th">密钥</th>
-                  <th className="th">额度</th>
-                  <th className="th">已用</th>
+                  <th className="th-r">额度</th>
+                  <th className="th-r">已用</th>
                   <th className="th">最后使用</th>
                   <th className="th">状态</th>
                   <th className="th text-right">操作</th>
@@ -112,9 +112,9 @@ export default function Tokens() {
                         <CopyButton text={row.key} />
                       </span>
                     </td>
-                    <td className="td">{row.unlimited ? '无限制' : fmtUSD(row.quota, 2)}</td>
-                    <td className="td">{fmtUSD(row.used_quota)}</td>
-                    <td className="td">{fmtTime(row.last_used_at)}</td>
+                    <td className="td-r">{row.unlimited ? '无限制' : fmtUSD(row.quota, 2)}</td>
+                    <td className="td-r">{fmtUSD(row.used_quota)}</td>
+                    <td className="td tabular-nums">{fmtTime(row.last_used_at)}</td>
                     <td className="td">
                       <button onClick={() => toggle(row)}>
                         <StatusChip ok={row.status === 1} />

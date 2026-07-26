@@ -89,11 +89,11 @@ export default function Landing() {
             <span className="truncate">{site.announcement}</span>
           </div>
         )}
-        <h1 className="mx-auto max-w-3xl text-4xl font-extrabold leading-tight tracking-tight md:text-[56px] md:leading-[1.15]">
+        <h1 className="mx-auto max-w-3xl text-4xl font-bold leading-[1.2] tracking-[-0.02em] md:text-[52px] md:leading-[1.15]">
           一个密钥,直连
           <span className="text-brand-600">全球大模型</span>
         </h1>
-        <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-ink-dim md:text-lg">
+        <p className="mx-auto mt-6 max-w-[42rem] text-base leading-7 text-ink-dim md:text-[17px] md:leading-8">
           {site.site_name} 是新一代大模型 API 中转平台 —— 聚合 GPT、Claude、DeepSeek、Gemini 等主流模型,
           OpenAI 协议全兼容,更低价格、更高可用、按量计费。
         </p>
@@ -104,6 +104,20 @@ export default function Landing() {
           <a href="#quickstart" className="btn-ghost !px-6 !py-3 !text-base">
             <TerminalSquare size={17} /> 查看接入示例
           </a>
+        </div>
+
+        {/* 数据条 */}
+        <div className="mx-auto mt-14 flex max-w-xl items-stretch justify-center divide-x divide-line">
+          {[
+            ['99.9%', '服务可用性'],
+            ['20+', '聚合模型'],
+            ['<1s', '故障切换']
+          ].map(([v, l]) => (
+            <div key={l} className="flex-1 px-6">
+              <div className="text-[22px] font-semibold leading-8 tracking-[-0.01em] tabular-nums text-ink">{v}</div>
+              <div className="mt-0.5 text-xs text-ink-mute">{l}</div>
+            </div>
+          ))}
         </div>
 
         {/* 代码卡片:浅色页面上的深色终端,保持专业对比 */}
@@ -131,18 +145,21 @@ export default function Landing() {
       {/* 特性 */}
       <section id="features" className="border-t border-line bg-bg py-20">
         <div className="mx-auto max-w-6xl px-6">
-          <h2 className="text-center text-3xl font-bold tracking-tight">为分发而生的中转引擎</h2>
-          <p className="mx-auto mt-3 max-w-xl text-center text-ink-mute">
-            稳定压倒一切。渠道调度、计费、密钥管理,一站式全部搞定。
-          </p>
+          <div className="text-center">
+            <div className="kicker">Capabilities</div>
+            <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.01em]">为分发而生的中转引擎</h2>
+            <p className="mx-auto mt-3 max-w-xl text-[15px] leading-7 text-ink-mute">
+              稳定压倒一切。渠道调度、计费、密钥管理,一站式全部搞定。
+            </p>
+          </div>
           <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map(f => (
               <div key={f.title} className="card p-6 transition-shadow hover:shadow-pop">
-                <div className="mb-4 inline-flex rounded-lg bg-brand-50 p-3 text-brand-600">
-                  <f.icon size={22} />
+                <div className="mb-4 inline-flex rounded-lg bg-brand-50 p-2.5 text-brand-600">
+                  <f.icon size={20} />
                 </div>
-                <h3 className="mb-2 font-semibold">{f.title}</h3>
-                <p className="text-sm leading-relaxed text-ink-mute">{f.desc}</p>
+                <h3 className="card-title mb-1.5">{f.title}</h3>
+                <p className="text-[13px] leading-6 text-ink-mute">{f.desc}</p>
               </div>
             ))}
           </div>
@@ -152,8 +169,11 @@ export default function Landing() {
       {/* 模型 */}
       <section id="models" className="border-t border-line bg-card py-16">
         <div className="mx-auto max-w-6xl px-6">
-          <div className="mb-8 flex items-center justify-between">
-            <h2 className="text-xl font-bold">支持的主流模型</h2>
+          <div className="mb-8 flex items-end justify-between">
+            <div>
+              <div className="kicker">Models</div>
+              <h2 className="mt-2 text-[22px] font-semibold tracking-[-0.01em]">支持的主流模型</h2>
+            </div>
             <Link
               to={user ? '/console/models' : '/register'}
               className="flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700"
@@ -181,8 +201,8 @@ export default function Landing() {
       <section className="border-t border-line bg-bg py-20">
         <div className="mx-auto max-w-6xl px-6 text-center">
           <div className="card mx-auto max-w-3xl p-12">
-            <h2 className="text-3xl font-bold tracking-tight">准备好开始了吗?</h2>
-            <p className="mx-auto mt-3 max-w-md text-ink-mute">
+            <h2 className="text-[28px] font-semibold tracking-[-0.01em]">准备好开始了吗?</h2>
+            <p className="mx-auto mt-3 max-w-md text-[15px] leading-7 text-ink-mute">
               注册即送体验额度,一分钟完成接入,让你的应用立刻拥有全球大模型能力。
             </p>
             <Link to={user ? '/console' : '/register'} className="btn-primary mt-8 !px-8 !py-3 !text-base">

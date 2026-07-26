@@ -35,8 +35,8 @@ export default function Models() {
               <thead className="border-b border-line">
                 <tr>
                   <th className="th">模型</th>
-                  <th className="th">输入价格 / 1M</th>
-                  <th className="th">输出价格 / 1M</th>
+                  <th className="th-r">输入价格 / 1M</th>
+                  <th className="th-r">输出价格 / 1M</th>
                   <th className="th">状态</th>
                 </tr>
               </thead>
@@ -44,8 +44,8 @@ export default function Models() {
                 {filtered.map(r => (
                   <tr key={r.model} className="transition hover:bg-panel/60">
                     <td className="td font-mono text-[13px] text-ink">{r.model}</td>
-                    <td className="td">${r.input_price.toFixed(2)}</td>
-                    <td className="td">${r.output_price.toFixed(2)}</td>
+                    <td className="td-r">${r.input_price.toFixed(2)}</td>
+                    <td className="td-r">${r.output_price.toFixed(2)}</td>
                     <td className="td">
                       <StatusChip ok={r.available} onText="可用" offText="未上架" />
                     </td>

@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate, Navigate } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate, Navigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, KeyRound, ScrollText, Boxes, Wallet, Waypoints,
   Users, Ticket, Settings, LogOut, BookOpen, ShieldCheck
@@ -46,6 +46,10 @@ function NavItem({ to, icon: Icon, label, end }) {
 export default function ConsoleLayout() {
   const { user, loading, logout } = useAuth()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const current = [...userNav, ...adminNav].find(i =>
+    i.end ? pathname === i.to : pathname.startsWith(i.to) && i.to !== '/console'
+  ) || userNav[0]
 
   if (loading)
     return (
@@ -102,7 +106,12 @@ export default function ConsoleLayout() {
 
       {/* 主区域 */}
       <div className="ml-60 flex-1">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-end gap-3 border-b border-line bg-card/90 px-6 backdrop-blur">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-line bg-card/90 px-6 backdrop-blur">
+          <div className="flex items-center gap-2 text-[13px]">
+            <span className="text-ink-mute">控制台</span>
+            <span className="text-line">/</span>
+            <span className="font-medium text-ink">{current.label}</span>
+          </div>
           <NavLink
             to="/console/wallet"
             className="chip border border-line bg-card !px-3 !py-1.5 text-ink-dim shadow-card transition-colors hover:bg-panel hover:text-ink"

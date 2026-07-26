@@ -109,9 +109,9 @@ export default function Channels() {
                 <tr>
                   <th className="th">渠道</th>
                   <th className="th">Base URL</th>
-                  <th className="th">模型数</th>
-                  <th className="th">优先级 / 权重</th>
-                  <th className="th">连通性</th>
+                  <th className="th-r">模型数</th>
+                  <th className="th-r">优先级 / 权重</th>
+                  <th className="th-r">连通性</th>
                   <th className="th">状态</th>
                   <th className="th text-right">操作</th>
                 </tr>
@@ -123,9 +123,9 @@ export default function Channels() {
                     <tr key={row.id} className="transition hover:bg-panel/60">
                       <td className="td font-medium text-ink">{row.name}</td>
                       <td className="td max-w-[220px] truncate font-mono text-[13px]">{row.base_url}</td>
-                      <td className="td">{modelCount}</td>
-                      <td className="td">{row.priority} / {row.weight}</td>
-                      <td className="td">
+                      <td className="td-r">{modelCount}</td>
+                      <td className="td-r">{row.priority} / {row.weight}</td>
+                      <td className="td-r">
                         {row.last_test_at == null ? (
                           <span className="text-ink-mute">未测试</span>
                         ) : row.last_test_ok ? (

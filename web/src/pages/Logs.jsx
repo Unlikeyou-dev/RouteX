@@ -82,25 +82,25 @@ export default function Logs() {
                   <th className="th">令牌</th>
                   <th className="th">模型</th>
                   {isAdmin && <th className="th">渠道</th>}
-                  <th className="th">输入/输出</th>
-                  <th className="th">费用</th>
-                  <th className="th">耗时</th>
+                  <th className="th-r">输入/输出</th>
+                  <th className="th-r">费用</th>
+                  <th className="th-r">耗时</th>
                   <th className="th">状态</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line/60">
                 {data.rows.map(l => (
                   <tr key={l.id} className="transition hover:bg-panel/60">
-                    <td className="td">{fmtTime(l.created_at)}</td>
+                    <td className="td tabular-nums">{fmtTime(l.created_at)}</td>
                     {isAdmin && scope === 'all' && <td className="td">{l.username || '—'}</td>}
                     <td className="td">{l.token_name || '—'}</td>
                     <td className="td font-mono text-[13px] text-ink">{l.model}</td>
                     {isAdmin && <td className="td">{l.channel_name || '—'}</td>}
-                    <td className="td">
+                    <td className="td-r">
                       {fmtNum(l.prompt_tokens)} / {fmtNum(l.completion_tokens)}
                     </td>
-                    <td className="td">{fmtUSD(l.cost)}</td>
-                    <td className="td">{l.latency_ms}ms</td>
+                    <td className="td-r">{fmtUSD(l.cost)}</td>
+                    <td className="td-r">{l.latency_ms}ms</td>
                     <td className="td">
                       {l.status === 'success' ? (
                         <span className="chip bg-okbg text-ok">成功{l.stream ? ' · 流式' : ''}</span>

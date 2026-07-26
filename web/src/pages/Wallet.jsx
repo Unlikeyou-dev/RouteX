@@ -61,15 +61,15 @@ export default function Wallet() {
           <WalletIcon size={17} />
           <span className="text-sm">当前余额</span>
         </div>
-        <div className="mt-2 text-4xl font-extrabold tracking-tight">{fmtUSD(user?.quota ?? 0, 2)}</div>
-        <div className="mt-2 text-sm text-ink-mute">累计消耗 {fmtUSD(user?.used_quota ?? 0)}</div>
+        <div className="mt-2 text-[34px] font-semibold leading-10 tracking-[-0.01em] tabular-nums">{fmtUSD(user?.quota ?? 0, 2)}</div>
+        <div className="mt-2 text-[13px] tabular-nums text-ink-mute">累计消耗 {fmtUSD(user?.used_quota ?? 0)}</div>
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         {/* 在线充值 */}
         <div className="card p-6">
-          <h3 className="mb-1 flex items-center gap-2 font-semibold">
-            <CreditCard size={17} className="text-brand-400" /> 在线充值
+          <h3 className="card-title mb-1 flex items-center gap-2">
+            <CreditCard size={17} className="text-brand-600" /> 在线充值
           </h3>
           <p className="mb-5 text-xs text-ink-mute">支付通道接入中,下单后请联系管理员完成到账。</p>
           <div className="grid grid-cols-3 gap-2.5">
@@ -109,8 +109,8 @@ export default function Wallet() {
 
         {/* 兑换码 */}
         <div className="card p-6">
-          <h3 className="mb-1 flex items-center gap-2 font-semibold">
-            <Ticket size={17} className="text-brand-400" /> 兑换码充值
+          <h3 className="card-title mb-1 flex items-center gap-2">
+            <Ticket size={17} className="text-brand-600" /> 兑换码充值
           </h3>
           <p className="mb-5 text-xs text-ink-mute">输入兑换码,额度即时到账。</p>
           <input

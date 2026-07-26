@@ -19,8 +19,8 @@ function StatCard({ icon: Icon, label, value, sub }) {
           <Icon size={16} />
         </span>
       </div>
-      <div className="mt-2 text-2xl font-bold tracking-tight">{value}</div>
-      {sub && <div className="mt-1 text-xs text-ink-mute">{sub}</div>}
+      <div className="mt-2 text-[26px] font-semibold leading-9 tracking-[-0.01em] tabular-nums">{value}</div>
+      {sub && <div className="mt-1 text-xs tabular-nums text-ink-mute">{sub}</div>}
     </div>
   )
 }
@@ -53,7 +53,7 @@ export default function Dashboard() {
       <div className="mt-5 grid gap-5 lg:grid-cols-3">
         <div className="card p-6 lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
-            <h3 className="font-semibold">近 14 天{m.label}</h3>
+            <h3 className="card-title">近 14 天{m.label}</h3>
             <div className="flex rounded-xl border border-line bg-panel p-1">
               {METRICS.map(x => (
                 <button
@@ -72,7 +72,7 @@ export default function Dashboard() {
         </div>
 
         <div className="card p-6">
-          <h3 className="mb-5 font-semibold">模型消耗排行</h3>
+          <h3 className="card-title mb-5">模型消耗排行</h3>
           {models.length === 0 ? (
             <Empty text="暂无调用记录" />
           ) : (
@@ -82,7 +82,7 @@ export default function Dashboard() {
       </div>
 
       <div className="card mt-5 overflow-hidden">
-        <h3 className="border-b border-line px-6 py-4 font-semibold">最近调用</h3>
+        <h3 className="card-title border-b border-line px-6 py-4">最近调用</h3>
         {recent.length === 0 ? (
           <Empty text="还没有任何调用,去创建一个 API 令牌开始吧" />
         ) : (
@@ -92,20 +92,20 @@ export default function Dashboard() {
                 <tr>
                   <th className="th">时间</th>
                   <th className="th">模型</th>
-                  <th className="th">Tokens</th>
-                  <th className="th">费用</th>
-                  <th className="th">耗时</th>
+                  <th className="th-r">Tokens</th>
+                  <th className="th-r">费用</th>
+                  <th className="th-r">耗时</th>
                   <th className="th">状态</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line/60">
                 {recent.map(l => (
                   <tr key={l.id} className="transition hover:bg-panel/60">
-                    <td className="td">{fmtTime(l.created_at)}</td>
+                    <td className="td tabular-nums">{fmtTime(l.created_at)}</td>
                     <td className="td font-mono text-[13px] text-ink">{l.model}</td>
-                    <td className="td">{fmtNum(l.total_tokens)}</td>
-                    <td className="td">{fmtUSD(l.cost)}</td>
-                    <td className="td">{l.latency_ms}ms</td>
+                    <td className="td-r">{fmtNum(l.total_tokens)}</td>
+                    <td className="td-r">{fmtUSD(l.cost)}</td>
+                    <td className="td-r">{l.latency_ms}ms</td>
                     <td className="td">
                       {l.status === 'success' ? (
                         <span className="chip bg-okbg text-ok">成功</span>

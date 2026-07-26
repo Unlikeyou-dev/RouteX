@@ -58,7 +58,7 @@ export default function Redemptions() {
               <thead className="border-b border-line">
                 <tr>
                   <th className="th">兑换码</th>
-                  <th className="th">面额</th>
+                  <th className="th-r">面额</th>
                   <th className="th">状态</th>
                   <th className="th">使用者</th>
                   <th className="th">创建时间</th>
@@ -74,7 +74,7 @@ export default function Redemptions() {
                         <CopyButton text={row.code} />
                       </span>
                     </td>
-                    <td className="td">{fmtUSD(row.amount, 2)}</td>
+                    <td className="td-r">{fmtUSD(row.amount, 2)}</td>
                     <td className="td">
                       {row.status === 'unused' ? (
                         <span className="chip bg-okbg text-ok">未使用</span>
@@ -83,7 +83,7 @@ export default function Redemptions() {
                       )}
                     </td>
                     <td className="td">{row.used_by_name || '—'}</td>
-                    <td className="td">{fmtTime(row.created_at)}</td>
+                    <td className="td tabular-nums">{fmtTime(row.created_at)}</td>
                     <td className="td text-right">
                       {row.status === 'unused' && (
                         <button className="rounded-lg p-2 text-ink-mute hover:bg-panel hover:text-bad" onClick={() => remove(row)}>

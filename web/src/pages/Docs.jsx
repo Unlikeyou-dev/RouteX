@@ -57,7 +57,7 @@ console.log(resp.choices[0].message.content);`
 
       <div className="space-y-5">
         <div className="card p-6">
-          <h3 className="mb-3 font-semibold">接口地址</h3>
+          <h3 className="card-title mb-3">接口地址</h3>
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="rounded-lg border border-line bg-panel px-3 py-1.5 font-mono text-[13px] text-brand-600">
               {base}/v1
@@ -68,22 +68,22 @@ console.log(resp.choices[0].message.content);`
         </div>
 
         <div className="card p-6">
-          <h3 className="mb-3 font-semibold">cURL</h3>
+          <h3 className="card-title mb-3">cURL</h3>
           <Code copy={curl}>{curl}</Code>
         </div>
 
         <div className="card p-6">
-          <h3 className="mb-3 font-semibold">Python(openai SDK)</h3>
+          <h3 className="card-title mb-3">Python(openai SDK)</h3>
           <Code copy={python}>{python}</Code>
         </div>
 
         <div className="card p-6">
-          <h3 className="mb-3 font-semibold">Node.js(openai SDK)</h3>
+          <h3 className="card-title mb-3">Node.js(openai SDK)</h3>
           <Code copy={node}>{node}</Code>
         </div>
 
         <div className="card p-6 text-sm leading-relaxed text-ink-dim">
-          <h3 className="mb-3 font-semibold text-ink">常见问题</h3>
+          <h3 className="card-title mb-3">常见问题</h3>
           <ul className="list-disc space-y-2 pl-5">
             <li>流式输出:请求体中设置 <code className="font-mono text-brand-600">"stream": true</code> 即可,与 OpenAI 行为一致。</li>
             <li>可用模型列表:调用 <code className="font-mono text-brand-600">GET /v1/models</code>,或查看「模型价格」页面。</li>

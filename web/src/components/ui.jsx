@@ -112,10 +112,10 @@ export function Empty({ text = '暂无数据' }) {
 
 export function PageHeader({ title, desc, children }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div className="mb-7 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="text-xl font-bold tracking-tight">{title}</h1>
-        {desc && <p className="mt-1 text-sm text-ink-mute">{desc}</p>}
+        <h1 className="text-[22px] font-semibold leading-8 tracking-[-0.01em]">{title}</h1>
+        {desc && <p className="mt-1.5 text-[13px] leading-5 text-ink-mute">{desc}</p>}
       </div>
       {children && <div className="flex items-center gap-2">{children}</div>}
     </div>

@@ -51,13 +51,27 @@
   .label {
     @apply mb-1.5 block text-[13px] font-medium text-ink-dim;
   }
+  /* 表格排版:表头 11px 小型大写,数字列右对齐 + 等宽数字 */
   .th {
-    @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-ink-mute whitespace-nowrap;
+    @apply px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-mute whitespace-nowrap;
+  }
+  .th-r {
+    @apply px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-mute whitespace-nowrap;
   }
   .td {
     @apply px-4 py-3 text-sm text-ink-dim whitespace-nowrap;
   }
+  .td-r {
+    @apply px-4 py-3 text-right text-sm text-ink-dim whitespace-nowrap tabular-nums;
+  }
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  /* 版式层级 */
+  .card-title {
+    @apply text-[15px] font-semibold tracking-[-0.01em] text-ink;
+  }
+  .kicker {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-brand-600;
   }
 }

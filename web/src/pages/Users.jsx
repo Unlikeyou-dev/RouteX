@@ -64,12 +64,12 @@ export default function Users() {
             <table className="w-full">
               <thead className="border-b border-line">
                 <tr>
-                  <th className="th">ID</th>
+                  <th className="th-r">ID</th>
                   <th className="th">用户名</th>
                   <th className="th">角色</th>
-                  <th className="th">余额</th>
-                  <th className="th">已消耗</th>
-                  <th className="th">请求数</th>
+                  <th className="th-r">余额</th>
+                  <th className="th-r">已消耗</th>
+                  <th className="th-r">请求数</th>
                   <th className="th">注册时间</th>
                   <th className="th">状态</th>
                   <th className="th text-right">操作</th>
@@ -78,7 +78,7 @@ export default function Users() {
               <tbody className="divide-y divide-line/60">
                 {rows.map(row => (
                   <tr key={row.id} className="transition hover:bg-panel/60">
-                    <td className="td">{row.id}</td>
+                    <td className="td-r">{row.id}</td>
                     <td className="td font-medium text-ink">{row.username}</td>
                     <td className="td">
                       {row.role === 'admin' ? (
@@ -87,10 +87,10 @@ export default function Users() {
                         <span className="chip bg-panel text-ink-dim">用户</span>
                       )}
                     </td>
-                    <td className="td">{fmtUSD(row.quota, 2)}</td>
-                    <td className="td">{fmtUSD(row.used_quota)}</td>
-                    <td className="td">{fmtNum(row.request_count)}</td>
-                    <td className="td">{fmtTime(row.created_at)}</td>
+                    <td className="td-r">{fmtUSD(row.quota, 2)}</td>
+                    <td className="td-r">{fmtUSD(row.used_quota)}</td>
+                    <td className="td-r">{fmtNum(row.request_count)}</td>
+                    <td className="td tabular-nums">{fmtTime(row.created_at)}</td>
                     <td className="td">
                       <button onClick={() => toggle(row)}>
                         <StatusChip ok={row.status === 1} onText="正常" offText="封禁" />

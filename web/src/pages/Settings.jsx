@@ -50,7 +50,7 @@ export default function Settings() {
 
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="card space-y-4 p-6">
-          <h3 className="font-semibold">基础信息</h3>
+          <h3 className="card-title">基础信息</h3>
           <div>
             <label className="label">站点名称</label>
             <input className="input" value={form.site_name} onChange={set('site_name')} />
@@ -76,7 +76,7 @@ export default function Settings() {
         </div>
 
         <div className="card space-y-4 self-start p-6">
-          <h3 className="font-semibold">修改密码</h3>
+          <h3 className="card-title">修改密码</h3>
           <div>
             <label className="label">原密码</label>
             <input
