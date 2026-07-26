@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { db, now } from '../db.js'
 import { authRequired, adminRequired } from '../middleware/auth.js'
-import { badRequest } from '../util.js'
+import { badRequest, normalizeBaseUrl } from '../util.js'
 import { testChannel } from '../health.js'
 
 const router = Router()
@@ -16,10 +16,10 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   const {
-    name, base_url, api_key, models = '', model_mapping = '{}',
+    name, base_url = '', api_key, models = '', model_mapping = '{}',
     priority = 0, weight = 1, type = 'openai'
   } = req.body || {}
-  if (!name || !base_url || !api_key) return badRequest(res, '名称、Base URL、密钥均为必填')
+  if (!name || !api_key) return badRequest(res, '名称、密钥均为必填')
   if (!TYPES.includes(type)) return badRequest(res, '未知的渠道类型')
   try { JSON.parse(model_mapping || '{}') } catch { return badRequest(res, '模型映射需为合法 JSON') }
   const info = db
@@ -28,7 +28,7 @@ router.post('/', (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
-      name, base_url.replace(/\/+$/, ''), api_key, models, model_mapping || '{}',
+      name, normalizeBaseUrl(base_url, type), api_key, models, model_mapping || '{}',
       Number(priority) || 0, Number(weight) || 1, type, now()
     )
   res.json({ success: true, data: db.prepare('SELECT * FROM channels WHERE id = ?').get(info.lastInsertRowid) })
@@ -51,7 +51,7 @@ router.put('/:id', (req, res) => {
      WHERE id=?`
   ).run(
     b.name ?? row.name,
-    (b.base_url ?? row.base_url).replace(/\/+$/, ''),
+    normalizeBaseUrl(b.base_url ?? row.base_url, b.type ?? row.type),
     b.api_key ?? row.api_key,
     b.models ?? row.models,
     b.model_mapping ?? row.model_mapping,

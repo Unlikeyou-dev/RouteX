@@ -10,9 +10,9 @@ const emptyForm = {
 }
 
 const TYPE_META = {
-  openai: { label: 'OpenAI 兼容', cls: 'bg-panel text-ink-dim' },
-  anthropic: { label: 'Claude 原生', cls: 'bg-brand-50 text-brand-700' },
-  gemini: { label: 'Gemini 原生', cls: 'bg-okbg text-ok' }
+  openai: { label: 'OpenAI 兼容', cls: 'bg-panel text-ink-dim', official: 'https://api.openai.com' },
+  anthropic: { label: 'Claude 原生', cls: 'bg-brand-50 text-brand-700', official: 'https://api.anthropic.com' },
+  gemini: { label: 'Gemini 原生', cls: 'bg-okbg text-ok', official: 'https://generativelanguage.googleapis.com' }
 }
 
 export default function Channels() {
@@ -116,7 +116,7 @@ export default function Channels() {
                   <th className="th">渠道</th>
                   <th className="th">类型</th>
                   <th className="th">Base URL</th>
-                  <th className="th-r">模型数</th>
+                  <th className="th-r">模型</th>
                   <th className="th-r">优先级 / 权重</th>
                   <th className="th-r">连通性</th>
                   <th className="th">状态</th>
@@ -134,8 +134,10 @@ export default function Channels() {
                           {(TYPE_META[row.type] || TYPE_META.openai).label}
                         </span>
                       </td>
-                      <td className="td max-w-[220px] truncate font-mono text-[13px]">{row.base_url}</td>
-                      <td className="td-r">{modelCount}</td>
+                      <td className="td max-w-[220px] truncate font-mono text-[13px]" title={row.base_url || '未填写,直连官方 API'}>
+                        {row.base_url || <span className="font-sans text-ink-mute">官方地址</span>}
+                      </td>
+                      <td className="td-r" title={row.models}>{modelCount}</td>
                       <td className="td-r">{row.priority} / {row.weight}</td>
                       <td className="td-r">
                         {row.last_test_at == null ? (
@@ -202,8 +204,16 @@ export default function Channels() {
             </div>
           </div>
           <div>
-            <label className="label">Base URL{form.type === 'openai' ? '(不含 /v1)' : ''}</label>
-            <input className="input font-mono" placeholder="https://api.example.com" value={form.base_url} onChange={set('base_url')} />
+            <label className="label">代理地址(选填,留空直连官方)</label>
+            <input
+              className="input font-mono"
+              placeholder={`默认 ${(TYPE_META[form.type] || TYPE_META.openai).official}`}
+              value={form.base_url}
+              onChange={set('base_url')}
+            />
+            <p className="mt-1.5 text-xs text-ink-mute">
+              对接第三方中转站时填其地址即可;结尾的 /v1 会自动处理,不必纠结。
+            </p>
           </div>
           <div>
             <label className="label">上游 API Key(支持多把,每行一把,请求时随机轮询)</label>
@@ -215,10 +225,10 @@ export default function Channels() {
             />
           </div>
           <div>
-            <label className="label">支持的模型(逗号分隔)</label>
+            <label className="label">支持的模型(一行一个,或用逗号分隔)</label>
             <textarea
-              className="input min-h-[72px] resize-y font-mono !text-[13px]"
-              placeholder="gpt-4o, gpt-4o-mini, claude-sonnet-4-20250514"
+              className="input min-h-[88px] resize-y font-mono !text-[13px]"
+              placeholder={'gpt-4o\ngpt-4o-mini\nclaude-sonnet-4-20250514'}
               value={form.models}
               onChange={set('models')}
             />

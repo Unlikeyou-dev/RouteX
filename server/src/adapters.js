@@ -1,5 +1,6 @@
 // 上游协议适配器:对外统一 OpenAI 格式,对内按渠道类型转换
 // type = 'openai' | 'anthropic' | 'gemini'
+import { channelBaseUrl } from './util.js'
 
 // ---- 请求侧 ----
 
@@ -36,7 +37,7 @@ function messagesToGemini(body) {
 
 // 构造上游请求:返回 { url, headers, payload }
 export function buildUpstreamRequest(channel, apiKey, path, body, upstreamModel, isStream) {
-  const base = channel.base_url
+  const base = channelBaseUrl(channel)
 
   if (channel.type === 'anthropic') {
     const { system, messages } = messagesToAnthropic(body)

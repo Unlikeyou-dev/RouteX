@@ -4,6 +4,7 @@ import { db, now } from './db.js'
 import { computeCost } from './pricing.js'
 import { RELAY_TIMEOUT_MS } from './config.js'
 import { buildUpstreamRequest, convertResponse, createStreamTransformer } from './adapters.js'
+import { splitModels } from './util.js'
 
 const router = Router()
 
@@ -70,7 +71,7 @@ function pickChannels(model, path) {
     .all()
   const candidates = rows.filter(c => {
     if (path !== '/chat/completions' && c.type !== 'openai') return false
-    return c.models.split(',').map(m => m.trim()).includes(model)
+    return splitModels(c.models).includes(model)
   })
   if (candidates.length === 0) return []
   const groups = new Map()
@@ -160,7 +161,7 @@ function settle({ user, token, channel, model, promptTokens, completionTokens, l
 router.get('/models', relayAuth, (req, res) => {
   const channels = db.prepare('SELECT models FROM channels WHERE status = 1').all()
   const set = new Set()
-  for (const c of channels) c.models.split(',').map(m => m.trim()).filter(Boolean).forEach(m => set.add(m))
+  for (const c of channels) splitModels(c.models).forEach(m => set.add(m))
   res.json({
     object: 'list',
     data: [...set].sort().map(id => ({ id, object: 'model', created: 0, owned_by: 'routex' }))

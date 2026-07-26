@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { db, getSetting, groupRatio } from '../db.js'
 import { authRequired, adminRequired } from '../middleware/auth.js'
 import { getPrice } from '../pricing.js'
+import { splitModels } from '../util.js'
 
 const router = Router()
 
@@ -9,9 +10,7 @@ const router = Router()
 router.get('/', authRequired, (req, res) => {
   const channels = db.prepare('SELECT models FROM channels WHERE status = 1').all()
   const available = new Set()
-  for (const c of channels) {
-    c.models.split(',').map(m => m.trim()).filter(Boolean).forEach(m => available.add(m))
-  }
+  for (const c of channels) splitModels(c.models).forEach(m => available.add(m))
   // 展示价 = 基础价 × 站点倍率 × 当前用户分组倍率
   const ratio = (Number(getSetting('price_ratio', '1')) || 1) * groupRatio(req.user.group_name)
   const priced = db.prepare('SELECT * FROM model_prices ORDER BY model').all()

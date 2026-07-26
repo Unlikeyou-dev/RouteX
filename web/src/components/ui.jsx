@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Copy, Check, Loader2, Inbox, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, Info } from 'lucide-react'
 import { onToast } from '../store.jsx'
 
+// Modal / Toaster 一律 Portal 到 body:
+// 页面根元素的入场动画会保留 transform,使 fixed 定位基准被劫持而错位
 export function Modal({ open, onClose, title, children, width = 'max-w-lg' }) {
   useEffect(() => {
     const onKey = e => e.key === 'Escape' && onClose?.()
@@ -9,10 +12,10 @@ export function Modal({ open, onClose, title, children, width = 'max-w-lg' }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
   if (!open) return null
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-ink/30" onClick={onClose} />
-      <div className={`relative w-full ${width} animate-fade-up rounded-xl border border-line bg-card p-6 shadow-modal`}>
+      <div className={`relative max-h-[88vh] w-full ${width} animate-fade-up overflow-y-auto rounded-xl border border-line bg-card p-6 shadow-modal`}>
         <div className="mb-5 flex items-center justify-between">
           <h3 className="text-base font-semibold">{title}</h3>
           <button onClick={onClose} className="rounded-lg p-1.5 text-ink-mute transition-colors hover:bg-panel hover:text-ink">
@@ -21,7 +24,8 @@ export function Modal({ open, onClose, title, children, width = 'max-w-lg' }) {
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
@@ -40,7 +44,7 @@ export function Toaster() {
     error: <CircleAlert size={16} className="text-bad" />,
     info: <Info size={16} className="text-brand-600" />
   }
-  return (
+  return createPortal(
     <div className="pointer-events-none fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2">
       {items.map(t => (
         <div
@@ -51,7 +55,8 @@ export function Toaster() {
           <span>{t.message}</span>
         </div>
       ))}
-    </div>
+    </div>,
+    document.body
   )
 }
 

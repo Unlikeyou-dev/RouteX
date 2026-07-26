@@ -31,9 +31,9 @@ function NavItem({ to, icon: Icon, label, end }) {
       to={to}
       end={end}
       className={({ isActive }) =>
-        `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+        `group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
           isActive
-            ? 'bg-brand-50 text-brand-700'
+            ? 'bg-brand-50 text-brand-700 before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-full before:bg-brand-600'
             : 'text-ink-dim hover:bg-panel hover:text-ink'
         }`
       }

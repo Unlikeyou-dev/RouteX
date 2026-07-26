@@ -4,12 +4,13 @@
 import { db, now } from './db.js'
 import { buildUpstreamRequest } from './adapters.js'
 import { pickKey } from './relay.js'
+import { splitModels } from './util.js'
 
 const RECOVERY_INTERVAL = 5 * 60_000
 const FULL_SWEEP_EVERY = 6 // 每 6 个周期(30 分钟)全量巡检一次
 
 export async function testChannel(channel, model) {
-  const testModel = (model || channel.models.split(',')[0] || 'gpt-4o-mini').trim()
+  const testModel = model || splitModels(channel.models)[0] || 'gpt-4o-mini'
   const body = { model: testModel, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 }
   const { url, headers, payload } = buildUpstreamRequest(
     channel, pickKey(channel), '/chat/completions', body, testModel, false
