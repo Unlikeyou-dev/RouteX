@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, Pencil, PlugZap, Loader2, Zap, Eraser } from 'lucide-react'
+import { Plus, Trash2, Pencil, PlugZap, Loader2, Zap, Eraser, ListChecks, Check, X, Minus } from 'lucide-react'
 import { api, fmtTime, fmtUSD, fmtNum } from '../api.js'
 import { toast } from '../store.jsx'
 import { Modal, PageHeader, Spinner, Empty, StatusChip } from '../components/ui.jsx'
@@ -28,6 +28,7 @@ export default function Channels() {
   const [testing, setTesting] = useState({})
   const [testingAll, setTestingAll] = useState(false)
   const [selected, setSelected] = useState([])
+  const [compat, setCompat] = useState(null)
 
   const load = () =>
     api('/channels')
@@ -108,6 +109,35 @@ export default function Channels() {
       toast(e.message, 'error')
     } finally {
       setTesting(t => ({ ...t, [row.id]: false }))
+    }
+  }
+
+  const openCompat = async row => {
+    const models = splitList(row.models)
+    setCompat({ row, model: models[0] || '', features: [], items: [], loading: true })
+    try {
+      const data = await api(`/channels/${row.id}/compat`)
+      setCompat(c => (c?.row.id === row.id ? { ...c, ...data, loading: false } : c))
+    } catch (e) {
+      toast(e.message, 'error')
+      setCompat(c => (c ? { ...c, loading: false } : c))
+    }
+  }
+
+  const runCompat = async () => {
+    if (!compat?.model) return toast('先选一个模型', 'error')
+    setCompat(c => ({ ...c, running: true }))
+    try {
+      const data = await api(`/channels/${compat.row.id}/compat`, { method: 'POST', body: { model: compat.model } })
+      setCompat(c => ({
+        ...c,
+        running: false,
+        items: [...c.items.filter(i => i.model !== data.model), data].sort((a, b) => a.model.localeCompare(b.model))
+      }))
+      toast(data.results.baseline?.ok ? '自检完成' : '基线未通过,请先检查地址与 Key', data.results.baseline?.ok ? 'success' : 'error')
+    } catch (e) {
+      toast(e.message, 'error')
+      setCompat(c => ({ ...c, running: false }))
     }
   }
 
@@ -284,6 +314,13 @@ export default function Channels() {
                         >
                           {testing[row.id] ? <Loader2 size={15} className="animate-spin" /> : <PlugZap size={15} />}
                         </button>
+                        <button
+                          className="rounded-lg p-2 text-ink-mute hover:bg-panel hover:text-brand-600"
+                          title="兼容性自检"
+                          onClick={() => openCompat(row)}
+                        >
+                          <ListChecks size={15} />
+                        </button>
                         <button className="rounded-lg p-2 text-ink-mute hover:bg-panel hover:text-ink" onClick={() => openEdit(row)}>
                           <Pencil size={15} />
                         </button>
@@ -392,6 +429,82 @@ export default function Channels() {
           </div>
         </div>
       </Modal>
+
+      <Modal
+        open={!!compat}
+        onClose={() => setCompat(null)}
+        title={`兼容性自检 — ${compat?.row?.name || ''}`}
+        width="max-w-3xl"
+      >
+        <div className="space-y-4">
+          <p className="text-xs leading-5 text-ink-mute">
+            我们按模型名猜世代来裁剪参数,但上游多半是别人的中转站,改版或魔改都可能让某个参数突然被拒 ——
+            那时你只会看到一片 400,没有线索指向具体字段。自检会把参数逐项单独发一遍:先跑一次基线确认链路本身通,
+            再在基线之上一次只加一个特性。探到被拒的参数,以后的真实请求会直接剔掉,不再每次撞一次 400。
+            <b className="text-ink-dim">每项探测都是一次真实调用,会产生少量费用</b>(max_tokens 已压到 16)。
+          </p>
+
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className="label">探测模型</label>
+              <select
+                className="input"
+                value={compat?.model || ''}
+                onChange={e => setCompat(c => ({ ...c, model: e.target.value }))}
+              >
+                {splitList(compat?.row?.models).map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+            <button className="btn-primary" onClick={runCompat} disabled={compat?.running}>
+              {compat?.running ? <Loader2 size={15} className="animate-spin" /> : <ListChecks size={15} />}
+              {compat?.running ? '探测中…' : '开始自检'}
+            </button>
+          </div>
+
+          {compat?.loading ? (
+            <Spinner />
+          ) : !compat?.items?.length ? (
+            <Empty text="还没有自检记录" />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>
+                    <th className="th">模型</th>
+                    {(compat.features || []).map(f => (
+                      <th key={f.key} className="th text-center">{f.label}</th>
+                    ))}
+                    <th className="th">检测时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {compat.items.map(item => (
+                    <tr key={item.model} className="border-t border-line">
+                      <td className="td font-mono text-xs">{item.model}</td>
+                      {(compat.features || []).map(f => (
+                        <td key={f.key} className="td text-center">
+                          <CapMark r={item.results?.[f.key]} />
+                        </td>
+                      ))}
+                      <td className="td whitespace-nowrap text-xs text-ink-mute">{fmtTime(item.checked_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   )
+}
+
+// 失败原因挂在 title 上 —— 「不支持」本身没用,能落到具体字段才有用
+function CapMark({ r }) {
+  if (!r) return <span className="text-ink-mute">—</span>
+  if (r.skipped) return <Minus size={15} className="mx-auto text-ink-mute" title={r.message} />
+  if (r.ok) return <Check size={15} className="mx-auto text-ok" title={`${r.latency}ms`} />
+  return <X size={15} className="mx-auto text-bad" title={`${r.status ? `HTTP ${r.status} ` : ''}${r.message || ''}`} />
 }

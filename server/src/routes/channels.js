@@ -4,6 +4,8 @@ import { authRequired, adminRequired } from '../middleware/auth.js'
 import { badRequest, normalizeBaseUrl, splitList, splitModels } from '../util.js'
 import { testChannel } from '../health.js'
 import { fetchUpstreamModels, presetModels } from '../models-fetch.js'
+import { runCompatCheck, listCompat, clearCompat, FEATURES } from '../compat.js'
+import { pickKey } from '../relay.js'
 
 const router = Router()
 router.use(authRequired, adminRequired)
@@ -225,6 +227,38 @@ router.post('/:id/test', async (req, res) => {
       .run(now(), result.latency, row.id)
   }
   res.json({ success: true, data: { ok: result.ok, latency_ms: result.latency, message: result.message } })
+})
+
+// ---- 兼容性自检 ----
+
+router.get('/:id/compat', (req, res) => {
+  const row = db.prepare('SELECT id FROM channels WHERE id = ?').get(req.params.id)
+  if (!row) return badRequest(res, '渠道不存在')
+  res.json({
+    success: true,
+    data: { features: FEATURES.map(f => ({ key: f.key, label: f.label })), items: listCompat(row.id) }
+  })
+})
+
+router.post('/:id/compat', async (req, res) => {
+  const row = db.prepare('SELECT * FROM channels WHERE id = ?').get(req.params.id)
+  if (!row) return badRequest(res, '渠道不存在')
+  const model = String(req.body?.model || '').trim() || splitModels(row.models)[0]
+  if (!model) return badRequest(res, '该渠道还没有配置模型')
+  if (!splitModels(row.models).includes(model)) return badRequest(res, '该模型不在此渠道的模型列表里')
+
+  const key = pickKey(row)
+  if (!key) return badRequest(res, '该渠道没有可用的 Key')
+  try {
+    res.json({ success: true, data: await runCompatCheck(row, key, model) })
+  } catch (e) {
+    badRequest(res, e.message || '自检失败')
+  }
+})
+
+router.delete('/:id/compat', (req, res) => {
+  clearCompat(Number(req.params.id))
+  res.json({ success: true })
 })
 
 export default router

@@ -17,6 +17,7 @@ import {
   responsesRequestToOpenAI, openaiResponseToResponses, createResponsesEncoder
 } from './protocols/responses-in.js'
 import { splitModels, splitList, channelServesGroup, redactSecrets } from './util.js'
+import { applyCompat } from './compat.js'
 import { consumeRelayQuota } from './middleware/ratelimit.js'
 
 const router = Router()
@@ -515,7 +516,11 @@ async function handleRelay(req, res, path) {
       )
       : passthrough && channel.type === 'gemini'
         ? buildGeminiPassthrough(channel, apiKey, req.nativeBody, upstreamModel, isStream, outputCap)
-        : buildUpstreamRequest(channel, apiKey, path, cappedBody, upstreamModel, isStream)
+        // 自检探到被这个渠道拒收的参数,这里先剔掉,免得每次都去撞一次 400
+        : buildUpstreamRequest(
+          channel, apiKey, path,
+          applyCompat(cappedBody, channel.id, upstreamModel), upstreamModel, isStream
+        )
 
     let upstream
     try {

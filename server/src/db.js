@@ -154,6 +154,17 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_topups_order_no ON topups(order_n
 db.exec('CREATE INDEX IF NOT EXISTS idx_topups_status ON topups(status, id)')
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite ON users(invite_code)')
 
+// 渠道兼容性自检结果:按「渠道 + 模型」记一份能力表。
+// 我们按模型名猜世代来裁剪参数,但上游是别人的中转站,改版、限制、魔改都可能
+// 让某个参数突然被拒 —— 那时用户看到的只是一片 400,没人知道是哪个字段的问题。
+db.exec(`CREATE TABLE IF NOT EXISTS channel_caps (
+  channel_id INTEGER NOT NULL,
+  model TEXT NOT NULL,
+  results TEXT NOT NULL,
+  checked_at INTEGER NOT NULL,
+  PRIMARY KEY (channel_id, model)
+)`)
+
 // 用户分组(计费倍率按组叠加)
 db.exec(`CREATE TABLE IF NOT EXISTS groups (
   name TEXT PRIMARY KEY,
