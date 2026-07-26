@@ -1,7 +1,8 @@
 import { Router } from 'express'
-import { db, now, getSetting } from '../db.js'
+import { db, now } from '../db.js'
 import { authRequired, adminRequired } from '../middleware/auth.js'
-import { genRedemptionCode, badRequest, usd } from '../util.js'
+import { genRedemptionCode, badRequest } from '../util.js'
+import { creditUser } from '../billing.js'
 
 const router = Router()
 router.use(authRequired)
@@ -16,16 +17,7 @@ router.post('/redeem', (req, res) => {
     db.prepare("UPDATE redemptions SET status = 'used', used_by = ?, used_at = ? WHERE id = ?").run(
       req.user.id, now(), row.id
     )
-    db.prepare('UPDATE users SET quota = ROUND(quota + ?, 6) WHERE id = ?').run(usd(row.amount), req.user.id)
-    // 邀请返利:邀请人按比例分成
-    if (req.user.invited_by) {
-      const percent = Number(getSetting('aff_rebate_percent', '0')) || 0
-      const rebate = usd((row.amount * percent) / 100)
-      if (rebate > 0) {
-        db.prepare('UPDATE users SET quota = ROUND(quota + ?, 6), aff_earned = ROUND(aff_earned + ?, 6) WHERE id = ?')
-          .run(rebate, rebate, req.user.invited_by)
-      }
-    }
+    creditUser(req.user.id, row.amount)
     return row.amount
   })
   try {

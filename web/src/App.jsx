@@ -12,6 +12,7 @@ import Docs from './pages/Docs.jsx'
 import Channels from './pages/Channels.jsx'
 import Users from './pages/Users.jsx'
 import Redemptions from './pages/Redemptions.jsx'
+import Topups from './pages/Topups.jsx'
 import Settings from './pages/Settings.jsx'
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="channels" element={<Channels />} />
         <Route path="users" element={<Users />} />
         <Route path="redemptions" element={<Redemptions />} />
+        <Route path="topups" element={<Topups />} />
         <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>

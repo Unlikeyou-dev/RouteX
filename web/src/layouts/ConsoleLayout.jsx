@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate, Navigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, KeyRound, ScrollText, Boxes, Wallet, Waypoints,
-  Users, Ticket, Settings, LogOut, BookOpen, ShieldCheck, Menu
+  Users, Ticket, Settings, LogOut, BookOpen, ShieldCheck, Menu, Receipt
 } from 'lucide-react'
 import Logo from '../components/Logo.jsx'
 import { Toaster } from '../components/ui.jsx'
@@ -21,6 +21,7 @@ const userNav = [
 const adminNav = [
   { to: '/console/channels', icon: Waypoints, label: '上游渠道' },
   { to: '/console/users', icon: Users, label: '用户管理' },
+  { to: '/console/topups', icon: Receipt, label: '充值订单' },
   { to: '/console/redemptions', icon: Ticket, label: '兑换码' },
   { to: '/console/settings', icon: Settings, label: '站点设置' }
 ]

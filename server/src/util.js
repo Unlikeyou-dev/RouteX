@@ -51,6 +51,14 @@ export function channelServesGroup(channel, group) {
   return channelGroups(channel).includes(group || 'default')
 }
 
+// 充值订单号:RX + 年月日时分 + 4 位随机,方便用户在付款备注里填、你在收款记录里对
+export function genOrderNo() {
+  const d = new Date()
+  const p = (x, n = 2) => String(x).padStart(n, '0')
+  const stamp = `${String(d.getFullYear()).slice(2)}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}`
+  return `RX${stamp}${crypto.randomBytes(2).toString('hex').toUpperCase()}`
+}
+
 export function genRedemptionCode() {
   return crypto.randomBytes(16).toString('hex').toUpperCase().match(/.{4}/g).join('-')
 }

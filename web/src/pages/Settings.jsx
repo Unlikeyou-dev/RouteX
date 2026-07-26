@@ -1,8 +1,79 @@
-import { useEffect, useState } from 'react'
-import { Save, Plus, Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Save, Plus, Trash2, Upload, Bell, X } from 'lucide-react'
 import { api } from '../api.js'
 import { toast, useAuth } from '../store.jsx'
 import { PageHeader, Spinner } from '../components/ui.jsx'
+
+// 收款码截图动辄好几 MB,统一压到 600px / JPEG 再转 base64 存进设置,
+// 免得每次拉设置都拖上几兆。
+function fileToCompressedDataUrl(file, max = 600) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('读取图片失败'))
+    reader.onload = () => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('图片格式不支持'))
+      img.onload = () => {
+        const scale = Math.min(1, max / Math.max(img.width, img.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        const ctx = canvas.getContext('2d')
+        ctx.fillStyle = '#fff'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/jpeg', 0.88))
+      }
+      img.src = reader.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+function QrPicker({ label, value, onChange }) {
+  const inputRef = useRef(null)
+  return (
+    <div>
+      <label className="label">{label}</label>
+      {value ? (
+        <div className="relative inline-block">
+          <img src={value} alt={label} className="h-32 w-32 rounded-xl border border-line object-contain p-1" />
+          <button
+            className="absolute -right-2 -top-2 rounded-full border border-line bg-card p-1 text-ink-mute shadow-card hover:text-bad"
+            title="移除"
+            onClick={() => onChange('')}
+          >
+            <X size={13} />
+          </button>
+        </div>
+      ) : (
+        <button
+          className="flex h-32 w-32 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-line text-xs text-ink-mute transition hover:border-brand-300 hover:text-brand-600"
+          onClick={() => inputRef.current?.click()}
+        >
+          <Upload size={18} />
+          选择收款码
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={async e => {
+          const file = e.target.files?.[0]
+          e.target.value = ''
+          if (!file) return
+          try {
+            onChange(await fileToCompressedDataUrl(file))
+          } catch (err) {
+            toast(err.message, 'error')
+          }
+        }}
+      />
+    </div>
+  )
+}
 
 export default function Settings() {
   const { refresh } = useAuth()
@@ -63,6 +134,19 @@ export default function Settings() {
       loadGroups()
     } catch (e) {
       toast(e.message, 'error')
+    }
+  }
+
+  const testBark = async () => {
+    if (!form.bark_key?.trim()) return toast('请先填写 Bark Key 并保存', 'error')
+    setBusy(true)
+    try {
+      await api('/settings/bark-test', { method: 'POST', body: {} })
+      toast('测试推送已发出,看看手机', 'success')
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -143,7 +227,56 @@ export default function Settings() {
           </div>
         </div>
 
-        <div className="card self-start p-6">
+        <div className="space-y-5">
+        <div className="card space-y-4 p-6">
+          <h3 className="card-title flex items-center gap-2">
+            <Bell size={16} className="text-brand-600" /> 收款与通知
+          </h3>
+          <p className="-mt-2 text-xs leading-5 text-ink-mute">
+            贴上你的个人收款码,用户扫码付款后点「我已完成支付」,Bark 会推送到你手机,
+            在「充值订单」页确认即刻上额度。不配置收款码则充值页只显示兑换码入口。
+          </p>
+          <div className="flex gap-5">
+            <QrPicker
+              label="支付宝收款码"
+              value={form.pay_qr_alipay}
+              onChange={v => setForm(f => ({ ...f, pay_qr_alipay: v }))}
+            />
+            <QrPicker
+              label="微信收款码"
+              value={form.pay_qr_wechat}
+              onChange={v => setForm(f => ({ ...f, pay_qr_wechat: v }))}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">汇率(1 USD = ? CNY)</label>
+              <input className="input" type="number" step="0.1" min="0.1" value={form.cny_rate} onChange={set('cny_rate')} />
+            </div>
+            <div>
+              <label className="label">最低充值($)</label>
+              <input className="input" type="number" step="1" min="0" value={form.topup_min} onChange={set('topup_min')} />
+            </div>
+          </div>
+          <div>
+            <label className="label">Bark Key(iOS App 里那串 Key)</label>
+            <input className="input font-mono !text-[13px]" placeholder="留空则不推送" value={form.bark_key} onChange={set('bark_key')} />
+          </div>
+          <div>
+            <label className="label">Bark 服务器</label>
+            <input className="input font-mono !text-[13px]" placeholder="https://api.day.app" value={form.bark_server} onChange={set('bark_server')} />
+          </div>
+          <div className="flex gap-2">
+            <button className="btn-primary" onClick={save} disabled={busy}>
+              <Save size={15} /> 保存设置
+            </button>
+            <button className="btn-ghost" onClick={testBark} disabled={busy}>
+              <Bell size={15} /> 测试推送
+            </button>
+          </div>
+        </div>
+
+        <div className="card p-6">
           <h3 className="card-title">用户分组与倍率</h3>
           <p className="mb-4 mt-1 text-xs text-ink-mute">
             按分组差异化定价:批发客户可给更低倍率。用户的分组在「用户管理」中指派。
@@ -194,6 +327,7 @@ export default function Settings() {
               <Plus size={15} />
             </button>
           </div>
+        </div>
         </div>
       </div>
     </div>

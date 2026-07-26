@@ -123,6 +123,16 @@ ensureColumn('channels', 'used_quota', 'used_quota REAL NOT NULL DEFAULT 0')
 ensureColumn('channels', 'request_count', 'request_count INTEGER NOT NULL DEFAULT 0')
 // 令牌级模型白名单,留空表示不限
 ensureColumn('tokens', 'model_limits', "model_limits TEXT NOT NULL DEFAULT ''")
+// 充值订单:对外单号、实付人民币、用户备注、审核痕迹
+ensureColumn('topups', 'order_no', 'order_no TEXT')
+ensureColumn('topups', 'cny_amount', 'cny_amount REAL NOT NULL DEFAULT 0')
+ensureColumn('topups', 'payer_note', 'payer_note TEXT')
+ensureColumn('topups', 'submitted_at', 'submitted_at INTEGER')
+ensureColumn('topups', 'reviewed_by', 'reviewed_by INTEGER')
+ensureColumn('topups', 'reviewed_at', 'reviewed_at INTEGER')
+ensureColumn('topups', 'review_note', 'review_note TEXT')
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_topups_order_no ON topups(order_no)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_topups_status ON topups(status, id)')
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite ON users(invite_code)')
 
 // 用户分组(计费倍率按组叠加)
@@ -170,7 +180,14 @@ const defaultSettings = {
   announcement: '欢迎使用 RouteX API 中转站,新用户注册即送 $1 体验额度。',
   price_ratio: '1',
   signup_bonus: '1',
-  aff_rebate_percent: '10'
+  aff_rebate_percent: '10',
+  // 收款与推送(扫码充值:管理员贴自己的个人收款码,到账后人工确认)
+  pay_qr_alipay: '',
+  pay_qr_wechat: '',
+  cny_rate: '7.3',
+  topup_min: '1',
+  bark_key: '',
+  bark_server: 'https://api.day.app'
 }
 const insSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
 for (const [k, v] of Object.entries(defaultSettings)) insSetting.run(k, v)
