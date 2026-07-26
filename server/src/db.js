@@ -2,7 +2,6 @@ import Database from 'better-sqlite3'
 import path from 'node:path'
 import bcrypt from 'bcryptjs'
 import { DATA_DIR } from './config.js'
-import { DEFAULT_PRICES } from './pricing.js'
 
 export const db = new Database(path.join(DATA_DIR, 'routex.db'))
 db.pragma('journal_mode = WAL')
@@ -166,14 +165,9 @@ if (userCount === 0) {
   }
 }
 
-const priceCount = db.prepare('SELECT COUNT(*) AS c FROM model_prices').get().c
-if (priceCount === 0) {
-  const ins = db.prepare('INSERT INTO model_prices (model, input_price, output_price) VALUES (?, ?, ?)')
-  const tx = db.transaction(() => {
-    for (const [model, [inp, out]] of Object.entries(DEFAULT_PRICES)) ins.run(model, inp, out)
-  })
-  tx()
-}
+// 价目表刻意不预置任何模型:站点里有哪些模型由渠道决定,价目表只负责配价。
+// 添加渠道后,价目页会把「渠道有但还没定价」的模型高亮出来提示批量补齐。
+// (DEFAULT_PRICES 现在只作为定价时的建议值,见 pricing.js 的 suggestPrice)
 
 const defaultSettings = {
   site_name: 'RouteX',

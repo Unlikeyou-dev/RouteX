@@ -1,5 +1,8 @@
-// 模型定价表,单位:美元 / 1M tokens,[输入, 输出]
-// 实际计费 = 基础价 × price_ratio(站点倍率,可在设置中调整)
+// 内置价格库,单位:美元 / 1M tokens,[输入, 输出]
+//
+// 注意:这份表**不会**被预先写进 model_prices —— 站点里有哪些模型由「渠道」决定,
+// 价目表只负责给这些模型配价(对齐 new-api:模型名的户口在渠道,不在价目表)。
+// 它的用途是:你在价目页添加/批量定价时,按模型名前缀给出建议价,省得逐个去查官网。
 export const DEFAULT_PRICES = {
   'gpt-4o': [2.5, 10],
   'gpt-4o-mini': [0.15, 0.6],
@@ -27,15 +30,32 @@ export const FALLBACK_PRICE = [1, 2]
 
 import { db, getSetting } from './db.js'
 
-export function getPrice(model) {
+// 查价并说明来源:exact 精确命中 / prefix 前缀命中(带日期后缀的模型)/ fallback 兜底。
+// 价目页靠 source 把「未定价」的模型标出来,免得它们悄悄按兜底价卖。
+export function lookupPrice(model) {
   const row = db.prepare('SELECT input_price, output_price FROM model_prices WHERE model = ?').get(model)
-  if (row) return [row.input_price, row.output_price]
-  // 带日期后缀的模型尝试匹配前缀
+  if (row) return { input: row.input_price, output: row.output_price, source: 'exact', matched: model }
   const base = db
     .prepare("SELECT model, input_price, output_price FROM model_prices WHERE ? LIKE model || '%' ORDER BY LENGTH(model) DESC LIMIT 1")
     .get(model)
-  if (base) return [base.input_price, base.output_price]
-  return FALLBACK_PRICE
+  if (base) return { input: base.input_price, output: base.output_price, source: 'prefix', matched: base.model }
+  return { input: FALLBACK_PRICE[0], output: FALLBACK_PRICE[1], source: 'fallback', matched: null }
+}
+
+export function getPrice(model) {
+  const p = lookupPrice(model)
+  return [p.input, p.output]
+}
+
+// 建议价:新模型定价时按前缀在内置价格库里找一个最接近的,找不到就给兜底价
+export function suggestPrice(model) {
+  const name = String(model || '')
+  if (DEFAULT_PRICES[name]) return DEFAULT_PRICES[name]
+  let best = null
+  for (const key of Object.keys(DEFAULT_PRICES)) {
+    if (name.startsWith(key) && (!best || key.length > best.length)) best = key
+  }
+  return best ? DEFAULT_PRICES[best] : FALLBACK_PRICE
 }
 
 import { usd } from './util.js'

@@ -3,6 +3,7 @@ import { Plus, Trash2, Pencil, PlugZap, Loader2, Zap, Eraser } from 'lucide-reac
 import { api, fmtTime, fmtUSD, fmtNum } from '../api.js'
 import { toast } from '../store.jsx'
 import { Modal, PageHeader, Spinner, Empty, StatusChip } from '../components/ui.jsx'
+import { ModelPicker, MappingEditor } from '../components/ModelFields.jsx'
 
 const emptyForm = {
   name: '', base_url: '', api_key: '', models: '',
@@ -362,24 +363,17 @@ export default function Channels() {
               onChange={set('api_key')}
             />
           </div>
-          <div>
-            <label className="label">支持的模型(一行一个,或用逗号分隔)</label>
-            <textarea
-              className="input min-h-[88px] resize-y font-mono !text-[13px]"
-              placeholder={'gpt-4o\ngpt-4o-mini\nclaude-sonnet-4-20250514'}
-              value={form.models}
-              onChange={set('models')}
-            />
-          </div>
-          <div>
-            <label className="label">模型映射(可选,JSON:请求名 → 上游名)</label>
-            <textarea
-              className="input min-h-[56px] resize-y font-mono !text-[13px]"
-              placeholder='{"gpt-4o": "gpt-4o-2024-11-20"}'
-              value={form.model_mapping}
-              onChange={set('model_mapping')}
-            />
-          </div>
+          <ModelPicker
+            value={form.models}
+            onChange={v => setForm(f => ({ ...f, models: v }))}
+            channel={{ id: modal?.row?.id, type: form.type, base_url: form.base_url, api_key: form.api_key }}
+          />
+          <MappingEditor
+            key={modal?.row?.id ?? 'new'}
+            value={form.model_mapping}
+            onChange={v => setForm(f => ({ ...f, model_mapping: v }))}
+            models={form.models}
+          />
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">优先级(大者优先)</label>

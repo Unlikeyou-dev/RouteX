@@ -1,13 +1,45 @@
 import { Router } from 'express'
 import { db, now } from '../db.js'
 import { authRequired, adminRequired } from '../middleware/auth.js'
-import { badRequest, normalizeBaseUrl, splitList } from '../util.js'
+import { badRequest, normalizeBaseUrl, splitList, splitModels } from '../util.js'
 import { testChannel } from '../health.js'
+import { fetchUpstreamModels, presetModels } from '../models-fetch.js'
 
 const router = Router()
 router.use(authRequired, adminRequired)
 
 const TYPES = ['openai', 'anthropic', 'gemini']
+
+// 模型重定向校验。
+// 语义:左边是「用户调用时写的名字」,右边是「实际发给上游的名字」。
+// 路由是拿请求里的 model 去和渠道 models 列表比对的(见 relay.js pickChannels),
+// 所以左值必须出现在 models 里,否则这条映射永远不会被触发 —— 线上表现是 503,
+// 极难排查,因此在保存时就拦下来。
+function validateMapping(mappingRaw, modelsRaw) {
+  let mapping
+  try {
+    mapping = JSON.parse(mappingRaw || '{}')
+  } catch {
+    return { error: '模型重定向需为合法 JSON' }
+  }
+  if (mapping === null || typeof mapping !== 'object' || Array.isArray(mapping)) {
+    return { error: '模型重定向需为「请求名 → 上游名」的对象' }
+  }
+  const models = new Set(splitModels(modelsRaw))
+  const orphans = []
+  for (const [from, to] of Object.entries(mapping)) {
+    if (typeof to !== 'string' || !to.trim()) {
+      return { error: `模型重定向「${from}」的目标模型名不能为空` }
+    }
+    if (!models.has(from)) orphans.push(from)
+  }
+  if (orphans.length) {
+    return {
+      error: `模型重定向的「${orphans.join('、')}」不在该渠道「支持的模型」里,用户调用不到,请先把它加进模型列表`
+    }
+  }
+  return { value: JSON.stringify(mapping) }
+}
 
 // 分组归一化:去重、校验分组存在;留空则回落到 default
 function normalizeGroups(raw) {
@@ -31,7 +63,8 @@ router.post('/', (req, res) => {
   } = req.body || {}
   if (!name || !api_key) return badRequest(res, '名称、密钥均为必填')
   if (!TYPES.includes(type)) return badRequest(res, '未知的渠道类型')
-  try { JSON.parse(model_mapping || '{}') } catch { return badRequest(res, '模型映射需为合法 JSON') }
+  const mapping = validateMapping(model_mapping, models)
+  if (mapping.error) return badRequest(res, mapping.error)
   const groups = normalizeGroups(group_names)
   if (groups.error) return badRequest(res, groups.error)
   const info = db
@@ -51,8 +84,10 @@ router.put('/:id', (req, res) => {
   if (!row) return badRequest(res, '渠道不存在')
   const b = req.body || {}
   if (b.type !== undefined && !TYPES.includes(b.type)) return badRequest(res, '未知的渠道类型')
-  if (b.model_mapping !== undefined) {
-    try { JSON.parse(b.model_mapping || '{}') } catch { return badRequest(res, '模型映射需为合法 JSON') }
+  // 缩减 models 也可能让已有的映射变成孤儿,所以两者任一变动都要重新校验
+  if (b.model_mapping !== undefined || b.models !== undefined) {
+    const mapping = validateMapping(b.model_mapping ?? row.model_mapping, b.models ?? row.models)
+    if (mapping.error) return badRequest(res, mapping.error)
   }
   let groupValue = row.group_names
   if (b.group_names !== undefined) {
@@ -83,6 +118,34 @@ router.put('/:id', (req, res) => {
     row.id
   )
   res.json({ success: true, data: db.prepare('SELECT * FROM channels WHERE id = ?').get(row.id) })
+})
+
+// ---- 从上游拉取模型列表 ----
+// 新建渠道时还没有 id,直接用表单里的 base_url/key;编辑已有渠道时可以只传 id,
+// 用库里存的 key(免得为了拉个列表还要把密钥重新粘一遍)。
+router.post('/fetch-models', async (req, res) => {
+  const b = req.body || {}
+  let { type = 'openai', base_url = '', api_key = '' } = b
+  if (b.id) {
+    const row = db.prepare('SELECT * FROM channels WHERE id = ?').get(b.id)
+    if (row) {
+      type = b.type ?? row.type
+      base_url = b.base_url ?? row.base_url
+      // 表单里密钥没改动(前端回填的是原值)时也走这里,统一兜底成库里的
+      api_key = String(api_key || '').trim() || row.api_key
+    }
+  }
+  // 渠道可以挂多把 key,拉列表用第一把即可
+  const key = String(api_key || '').split(/[\n,]/)[0].trim()
+  const result = await fetchUpstreamModels({ type, base_url, api_key: key })
+  if (!result.ok) return badRequest(res, result.message)
+  res.json({ success: true, data: { models: result.models } })
+})
+
+// 「填入常用」的内置清单
+router.get('/preset-models', (req, res) => {
+  const type = String(req.query.type || 'openai')
+  res.json({ success: true, data: { models: presetModels[type] || presetModels.openai } })
 })
 
 // ---- 批量操作 ----
