@@ -15,7 +15,8 @@ const ADMIN_KEYS = [
   'precharge_completion_tokens', 'precharge_margin', 'max_concurrent_per_user',
   'relay_rate_limit_per_min',
   // 运维
-  'log_retention_days', 'backup_enabled', 'backup_keep'
+  'log_retention_days', 'backup_enabled', 'backup_keep',
+  'health_check_enabled', 'health_check_mode', 'health_sweep_minutes'
 ]
 
 // 公开站点信息(落地页使用)
@@ -32,7 +33,7 @@ router.get('/', authRequired, adminRequired, (req, res) => {
 const NUMERIC_KEYS = [
   'price_ratio', 'signup_bonus', 'aff_rebate_percent', 'cny_rate', 'topup_min',
   'precharge_completion_tokens', 'precharge_margin', 'max_concurrent_per_user',
-  'relay_rate_limit_per_min', 'log_retention_days', 'backup_keep'
+  'relay_rate_limit_per_min', 'log_retention_days', 'backup_keep', 'health_sweep_minutes'
 ]
 // 收款码允许 http(s) 图片地址或 data URI(前端本地选图后转 base64,省掉一套上传接口)
 const MAX_QR_LEN = 4 * 1024 * 1024

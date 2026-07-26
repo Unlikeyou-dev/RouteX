@@ -1,10 +1,43 @@
 import { Router } from 'express'
-import { db } from '../db.js'
+import bcrypt from 'bcryptjs'
+import { db, now } from '../db.js'
 import { authRequired, adminRequired, publicUser } from '../middleware/auth.js'
-import { badRequest, usd } from '../util.js'
+import { badRequest, usd, genTempPassword } from '../util.js'
 
 const router = Router()
 router.use(authRequired, adminRequired)
+
+// ---- 密码找回申请 ----
+// 声明在 /:id 之前,否则 "resets" 会被当成用户 id
+router.get('/resets', (req, res) => {
+  const rows = db
+    .prepare(
+      `SELECT r.*, u.username AS handler
+       FROM password_resets r LEFT JOIN users u ON u.id = r.handled_by
+       ORDER BY (r.status = 'pending') DESC, r.id DESC LIMIT 100`
+    )
+    .all()
+  res.json({ success: true, data: rows })
+})
+
+router.post('/resets/:id/done', (req, res) => {
+  db.prepare("UPDATE password_resets SET status = 'done', handled_by = ?, handled_at = ? WHERE id = ?")
+    .run(req.user.id, now(), req.params.id)
+  res.json({ success: true })
+})
+
+// 重置密码:生成临时密码并只返回这一次,同时吊销该用户所有已签发的登录态
+router.post('/:id/reset-password', (req, res) => {
+  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+  if (!row) return badRequest(res, '用户不存在')
+  const password = genTempPassword()
+  db.prepare('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?')
+    .run(bcrypt.hashSync(password, 10), row.id)
+  // 把该用户所有 pending 的找回申请一并标记处理完
+  db.prepare("UPDATE password_resets SET status = 'done', handled_by = ?, handled_at = ? WHERE username = ? AND status = 'pending'")
+    .run(req.user.id, now(), row.username)
+  res.json({ success: true, data: { username: row.username, password } })
+})
 
 router.get('/', (req, res) => {
   const rows = db.prepare('SELECT * FROM users ORDER BY id').all()

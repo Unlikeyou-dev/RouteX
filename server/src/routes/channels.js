@@ -214,7 +214,8 @@ router.delete('/:id', (req, res) => {
 router.post('/:id/test', async (req, res) => {
   const row = db.prepare('SELECT * FROM channels WHERE id = ?').get(req.params.id)
   if (!row) return badRequest(res, '渠道不存在')
-  const result = await testChannel(row, req.body?.model)
+  // 手动点的测试一律走真实 chat 调用 —— 既然是主动验证,就要验到底
+  const result = await testChannel(row, req.body?.model, 'chat')
   if (result.ok) {
     db.prepare(
       'UPDATE channels SET last_test_at = ?, last_test_ok = 1, latency_ms = ?, fail_count = 0, auto_disabled = 0 WHERE id = ?'

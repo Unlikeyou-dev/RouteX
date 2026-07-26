@@ -59,6 +59,13 @@ export function genOrderNo() {
   return `RX${stamp}${crypto.randomBytes(2).toString('hex').toUpperCase()}`
 }
 
+// 管理员重置密码时发给用户的临时密码:好念、不含易混字符
+export function genTempPassword() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+  const bytes = crypto.randomBytes(12)
+  return [...bytes].map(b => alphabet[b % alphabet.length]).join('')
+}
+
 export function genRedemptionCode() {
   return crypto.randomBytes(16).toString('hex').toUpperCase().match(/.{4}/g).join('-')
 }

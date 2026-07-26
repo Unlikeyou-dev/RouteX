@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Save, Plus, Trash2, Upload, Bell, X, ShieldCheck, HardDrive, Loader2 } from 'lucide-react'
-import { api } from '../api.js'
+import { api, setToken } from '../api.js'
 import { toast, useAuth } from '../store.jsx'
 import { PageHeader, Spinner, Switch } from '../components/ui.jsx'
 
@@ -109,8 +109,10 @@ export default function Settings() {
     if (!pwd.old_password || !pwd.new_password) return toast('请填写完整', 'error')
     setBusy(true)
     try {
-      await api('/user/me', { method: 'PUT', body: pwd })
-      toast('密码已修改', 'success')
+      const data = await api('/user/me', { method: 'PUT', body: pwd })
+      // 改密码会吊销所有已签发的登录态,后端顺手换发了一张新的,存下来免得自己被踢
+      if (data?.token) setToken(data.token)
+      toast('密码已修改,其他设备上的登录已失效', 'success')
       setPwd({ old_password: '', new_password: '' })
       refresh()
     } catch (e) {
@@ -336,6 +338,44 @@ export default function Settings() {
                 checked={form.backup_enabled === '1'}
                 onChange={v => setForm(f => ({ ...f, backup_enabled: v ? '1' : '0' }))}
               />
+            </div>
+
+            <div className="border-t border-line pt-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium">渠道定时巡检</div>
+                  <div className="text-xs text-ink-mute">熔断的渠道每 5 分钟探一次,恢复即自动上线</div>
+                </div>
+                <Switch
+                  checked={form.health_check_enabled === '1'}
+                  onChange={v => setForm(f => ({ ...f, health_check_enabled: v ? '1' : '0' }))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="label">探活方式</label>
+                  <select className="input" value={form.health_check_mode} onChange={set('health_check_mode')}>
+                    <option value="models">拉模型列表(免费)</option>
+                    <option value="chat">真实对话(会计费)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">全量巡检间隔(分钟)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    step="5"
+                    min="0"
+                    value={form.health_sweep_minutes}
+                    onChange={set('health_sweep_minutes')}
+                  />
+                </div>
+              </div>
+              <p className="mt-1.5 text-xs leading-5 text-ink-mute">
+                定时巡检默认用模型列表接口探活,不消耗任何 token。切成「真实对话」能确认 chat 链路真的通,
+                但每次巡检都会按输入 token 计费,渠道多了是一笔持续支出。间隔填 0 表示不做全量巡检。
+                渠道页手动点「测试连通性」始终走真实对话。
+              </p>
             </div>
 
             {backups.length > 0 && (

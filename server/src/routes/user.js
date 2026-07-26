@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import { db, now } from '../db.js'
-import { authRequired, publicUser } from '../middleware/auth.js'
+import { authRequired, publicUser, signToken } from '../middleware/auth.js'
 import { badRequest } from '../util.js'
 
 const router = Router()
@@ -13,16 +13,25 @@ router.get('/me', (req, res) => {
 
 router.put('/me', (req, res) => {
   const { old_password, new_password, email } = req.body || {}
+  let changedPassword = false
   if (new_password) {
     if (!bcrypt.compareSync(old_password || '', req.user.password_hash)) return badRequest(res, '原密码错误')
     if (new_password.length < 6) return badRequest(res, '新密码至少 6 位')
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(new_password, 10), req.user.id)
+    // 递增会话版本 = 让其他设备上已签发的 token 立刻失效
+    db.prepare('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?')
+      .run(bcrypt.hashSync(new_password, 10), req.user.id)
+    changedPassword = true
   }
   if (email !== undefined) {
     db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email || null, req.user.id)
   }
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id)
-  res.json({ success: true, data: publicUser(user) })
+  // 改密码会把自己手上这张 token 也作废,所以顺手换发一张新的,
+  // 否则用户一改完密码就被踢下线
+  res.json({
+    success: true,
+    data: { ...publicUser(user), ...(changedPassword ? { token: signToken(user) } : {}) }
+  })
 })
 
 // 仪表盘统计:近 N 天用量曲线、模型分布、今日概览、最近日志

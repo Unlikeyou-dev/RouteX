@@ -10,6 +10,11 @@ export function authRequired(req, res, next) {
     const payload = jwt.verify(token, JWT_SECRET)
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.id)
     if (!user || user.status !== 1) return res.status(401).json({ success: false, message: '账户不可用' })
+    // 会话版本对不上说明密码改过(或被管理员重置),旧 token 立即作废。
+    // 没有这一步的话,泄露的 token 在 7 天有效期内改密码也拦不住。
+    if ((payload.v ?? 0) !== (user.token_version ?? 0)) {
+      return res.status(401).json({ success: false, message: '密码已变更,请重新登录' })
+    }
     req.user = user
     next()
   } catch {
@@ -23,7 +28,11 @@ export function adminRequired(req, res, next) {
 }
 
 export function signToken(user) {
-  return jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' })
+  return jwt.sign(
+    { id: user.id, username: user.username, role: user.role, v: user.token_version ?? 0 },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  )
 }
 
 export function publicUser(u) {

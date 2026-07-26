@@ -4,9 +4,28 @@ import { api, fmtUSD, fmtTime } from '../api.js'
 import { toast } from '../store.jsx'
 import { Modal, PageHeader, Spinner, Empty, StatusChip, CopyButton, Switch } from '../components/ui.jsx'
 
-const emptyForm = { name: '', unlimited: true, quota: 5, model_limits: '' }
+const emptyForm = { name: '', unlimited: true, quota: 5, model_limits: '', expires_at: '' }
 
 const splitList = s => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean)
+
+// 有效期用「天数」做快捷选项,自定义时落到具体日期
+const EXPIRY_PRESETS = [
+  { days: 0, label: '永不过期' },
+  { days: 1, label: '1 天' },
+  { days: 7, label: '7 天' },
+  { days: 30, label: '30 天' },
+  { days: 90, label: '90 天' }
+]
+
+// <input type="date"> 的值 ↔ 秒级时间戳(取当天 23:59:59,免得当天就过期)
+const tsToDateInput = ts => {
+  if (!ts) return ''
+  const d = new Date(ts * 1000)
+  const p = x => String(x).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+const dateInputToTs = s => (s ? Math.floor(new Date(`${s}T23:59:59`).getTime() / 1000) : null)
+const daysFromNow = n => Math.floor(Date.now() / 1000) + n * 86400
 
 export default function Tokens() {
   const [rows, setRows] = useState(null)
@@ -25,7 +44,8 @@ export default function Tokens() {
   const openEdit = row => {
     setForm({
       name: row.name, unlimited: !!row.unlimited, quota: row.quota || 5,
-      model_limits: row.model_limits || ''
+      model_limits: row.model_limits || '',
+      expires_at: tsToDateInput(row.expires_at)
     })
     setModal({ mode: 'edit', row })
   }
@@ -34,11 +54,12 @@ export default function Tokens() {
     if (!form.name.trim()) return toast('请填写令牌名称', 'error')
     setBusy(true)
     try {
+      const body = { ...form, expires_at: dateInputToTs(form.expires_at) }
       if (modal.mode === 'create') {
-        await api('/tokens', { method: 'POST', body: form })
+        await api('/tokens', { method: 'POST', body })
         toast('令牌创建成功', 'success')
       } else {
-        await api(`/tokens/${modal.row.id}`, { method: 'PUT', body: form })
+        await api(`/tokens/${modal.row.id}`, { method: 'PUT', body })
         toast('令牌已更新', 'success')
       }
       setModal(null)
@@ -97,6 +118,7 @@ export default function Tokens() {
                   <th className="th-r">额度</th>
                   <th className="th-r">已用</th>
                   <th className="th">可用模型</th>
+                  <th className="th">有效期</th>
                   <th className="th">最后使用</th>
                   <th className="th">状态</th>
                   <th className="th text-right">操作</th>
@@ -127,6 +149,15 @@ export default function Tokens() {
                         </span>
                       ) : (
                         <span className="text-ink-mute">不限</span>
+                      )}
+                    </td>
+                    <td className="td tabular-nums">
+                      {!row.expires_at ? (
+                        <span className="text-ink-mute">永不过期</span>
+                      ) : row.expires_at < Math.floor(Date.now() / 1000) ? (
+                        <span className="chip bg-badbg text-bad" title={fmtTime(row.expires_at)}>已过期</span>
+                      ) : (
+                        fmtTime(row.expires_at)
                       )}
                     </td>
                     <td className="td tabular-nums">{fmtTime(row.last_used_at)}</td>
@@ -187,6 +218,34 @@ export default function Tokens() {
               />
             </div>
           )}
+          <div>
+            <label className="label">有效期</label>
+            <div className="mb-2 flex flex-wrap gap-2">
+              {EXPIRY_PRESETS.map(p => {
+                const value = p.days === 0 ? '' : tsToDateInput(daysFromNow(p.days))
+                const on = form.expires_at === value
+                return (
+                  <button
+                    key={p.days}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, expires_at: value }))}
+                    className={`chip transition ${
+                      on ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-600/30' : 'bg-panel text-ink-mute hover:text-ink'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                )
+              })}
+            </div>
+            <input
+              className="input"
+              type="date"
+              value={form.expires_at}
+              onChange={e => setForm(f => ({ ...f, expires_at: e.target.value }))}
+            />
+            <p className="mt-1.5 text-xs text-ink-mute">留空表示永不过期;到期后该令牌的调用会被直接拒绝。</p>
+          </div>
           <div>
             <label className="label">可用模型限制(选填,一行一个;留空表示不限)</label>
             <textarea

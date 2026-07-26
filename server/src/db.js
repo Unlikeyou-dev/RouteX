@@ -89,6 +89,17 @@ CREATE TABLE IF NOT EXISTS topups (
   created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS password_resets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL,
+  contact TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  handled_by INTEGER,
+  handled_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_resets_status ON password_resets(status, id);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -113,6 +124,8 @@ ensureColumn('users', 'invite_code', 'invite_code TEXT')
 ensureColumn('users', 'invited_by', 'invited_by INTEGER')
 ensureColumn('users', 'aff_earned', 'aff_earned REAL NOT NULL DEFAULT 0')
 ensureColumn('users', 'aff_count', 'aff_count INTEGER NOT NULL DEFAULT 0')
+// 会话版本号:改密码/管理员重置时递增,使已签发的 JWT 立即失效
+ensureColumn('users', 'token_version', 'token_version INTEGER NOT NULL DEFAULT 0')
 ensureColumn('channels', 'type', "type TEXT NOT NULL DEFAULT 'openai'")
 ensureColumn('channels', 'auto_disabled', 'auto_disabled INTEGER NOT NULL DEFAULT 0')
 ensureColumn('channels', 'fail_count', 'fail_count INTEGER NOT NULL DEFAULT 0')
@@ -190,6 +203,10 @@ const defaultSettings = {
   max_concurrent_per_user: '10',
   // 单令牌每分钟请求上限,0 = 不限
   relay_rate_limit_per_min: '0',
+  // 渠道巡检:models 用免费的模型列表接口探活,chat 发真实请求(会产生费用)
+  health_check_enabled: '1',
+  health_check_mode: 'models',
+  health_sweep_minutes: '30',
   // 运维:调用日志保留天数(0 = 永久),数据库每日备份与保留份数
   log_retention_days: '90',
   backup_enabled: '1',
