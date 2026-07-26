@@ -44,7 +44,17 @@ export function anthropicRequestToOpenAI(body) {
     ...(body.temperature !== undefined ? { temperature: body.temperature } : {}),
     ...(body.top_p !== undefined ? { top_p: body.top_p } : {}),
     ...(body.stop_sequences ? { stop: body.stop_sequences } : {}),
-    ...(body.stream ? { stream: true } : {})
+    ...(body.stream ? { stream: true } : {}),
+    ...(body.output_config?.effort ? { reasoning_effort: body.output_config.effort } : {}),
+    // 结构化输出:跨协议出站时要能翻成对方的写法,不接就等于把约束丢了
+    ...(body.output_config?.format?.type === 'json_schema' && body.output_config.format.schema
+      ? {
+        response_format: {
+          type: 'json_schema',
+          json_schema: { name: 'response', schema: body.output_config.format.schema, strict: true }
+        }
+      }
+      : {})
   }
 
   const system = systemToText(body.system)

@@ -6,8 +6,10 @@
 // 三者缺一不可。任何一环丢失,agent 就会在原地打转或直接崩掉。
 import { channelBaseUrl } from './util.js'
 import {
-  supportsSampling, supportsThinkingBudget, supportsAdaptiveThinking, normalizeEffort
+  supportsSampling, supportsThinkingBudget, supportsAdaptiveThinking, normalizeEffort,
+  supportsStructuredOutput
 } from './model-caps.js'
+import { toGeminiSchema, toAnthropicSchema, schemaInstruction } from './schema.js'
 import { getSetting } from './db.js'
 
 const autoCacheEnabled = () => getSetting('anthropic_auto_cache', '1') === '1'
@@ -315,25 +317,13 @@ function withAnthropicCache({ system, messages, tools }) {
 
 // ================= 请求侧:Gemini =================
 
-// Gemini 的 schema 不认 OpenAI JSON Schema 的部分关键字,先剔掉避免 400
-function cleanSchema(schema) {
-  if (!schema || typeof schema !== 'object') return schema
-  if (Array.isArray(schema)) return schema.map(cleanSchema)
-  const out = {}
-  for (const [k, v] of Object.entries(schema)) {
-    if (['additionalProperties', '$schema', 'default', 'examples', 'title'].includes(k)) continue
-    out[k] = cleanSchema(v)
-  }
-  return out
-}
-
 function toolsToGemini(tools) {
   const decls = (tools || [])
     .filter(t => t?.type === 'function' && t.function?.name)
     .map(t => ({
       name: t.function.name,
       description: t.function.description || '',
-      parameters: cleanSchema(t.function.parameters) || { type: 'object', properties: {} }
+      parameters: toGeminiSchema(t.function.parameters) || { type: 'object', properties: {} }
     }))
   return decls.length ? [{ functionDeclarations: decls }] : undefined
 }
@@ -495,13 +485,53 @@ function normalizedForCache(messages) {
   }))
 }
 
+// ================= 结构化输出 =================
+//
+// OpenAI 的 response_format 在另外两家各有各的写法,不翻译就等于**静默丢弃** ——
+// 用户要的是能 JSON.parse 的结果,拿到的却是一段散文,而且没有任何报错。
+//   · Anthropic:output_config.format(Claude 4.5 起),更老的模型只能写进 system
+//   · Gemini:generationConfig.responseMimeType + responseSchema
+// 两家接受的 schema 子集都比 OpenAI 窄,交给 schema.js 各裁一遍。
+
+function anthropicStructuredOutput(format, upstreamModel) {
+  if (!format) return {}
+  const schema = format.type === 'json_schema' ? format.json_schema?.schema : null
+  if (schema && supportsStructuredOutput(upstreamModel)) {
+    return { outputConfig: { format: { type: 'json_schema', schema: toAnthropicSchema(schema) } } }
+  }
+  // json_object 没有 schema 可给,老模型也不认 output_config.format —— 只能写进提示词
+  return { instruction: schemaInstruction(format) }
+}
+
+// 把兜底提示挂到 system 上(没有 system 就新建一条)
+function withSystemHint(messages, hint) {
+  const list = [...(messages || [])]
+  const i = list.findIndex(m => m.role === 'system')
+  if (i < 0) return [{ role: 'system', content: hint }, ...list]
+  const cur = list[i]
+  const text = typeof cur.content === 'string' ? cur.content : partsToText(cur.content)
+  list[i] = { ...cur, content: `${text}\n\n${hint}` }
+  return list
+}
+
+function geminiStructuredOutput(format) {
+  if (!format) return {}
+  if (format.type === 'json_object') return { responseMimeType: 'application/json' }
+  const schema = format.json_schema?.schema
+  if (format.type !== 'json_schema' || !schema) return {}
+  return { responseMimeType: 'application/json', responseSchema: toGeminiSchema(schema) }
+}
+
 // ================= 构造上游请求 =================
 
 export function buildUpstreamRequest(channel, apiKey, path, body, upstreamModel, isStream) {
   const base = channelBaseUrl(channel)
 
   if (channel.type === 'anthropic') {
-    const { system, messages } = messagesToAnthropic(body)
+    const so = anthropicStructuredOutput(body.response_format, upstreamModel)
+    const { system, messages } = messagesToAnthropic(
+      so.instruction ? { ...body, messages: withSystemHint(body.messages, so.instruction) } : body
+    )
     const noTools = body.tool_choice === 'none'
     const tools = noTools ? undefined : toolsToAnthropic(body.tools)
     const think = thinkingConfig(
@@ -511,6 +541,10 @@ export function buildUpstreamRequest(channel, apiKey, path, body, upstreamModel,
     // 绝大多数 OpenAI 客户端都会默认带 temperature,这一步不做整条链路都不通。
     const sampling = supportsSampling(upstreamModel)
     const cached = withAnthropicCache({ system, messages, tools })
+
+    // 思考档位与结构化输出共用 output_config,两边都要写时得合并而不是互相覆盖
+    const outputConfig = { ...(think.extra.output_config || {}), ...(so.outputConfig || {}) }
+    const { output_config: _drop, ...thinkExtra } = think.extra
 
     return {
       url: `${base}/v1/messages`,
@@ -524,7 +558,8 @@ export function buildUpstreamRequest(channel, apiKey, path, body, upstreamModel,
         max_tokens: think.maxTokens,
         ...(cached.system ? { system: cached.system } : {}),
         messages: cached.messages,
-        ...think.extra,
+        ...thinkExtra,
+        ...(Object.keys(outputConfig).length ? { output_config: outputConfig } : {}),
         ...(cached.tools ? { tools: cached.tools } : {}),
         ...(cached.tools && toolChoiceToAnthropic(body.tool_choice)
           ? { tool_choice: toolChoiceToAnthropic(body.tool_choice) }
@@ -553,8 +588,8 @@ export function buildUpstreamRequest(channel, apiKey, path, body, upstreamModel,
           ...(body.temperature !== undefined ? { temperature: body.temperature } : {}),
           ...(body.top_p !== undefined ? { topP: body.top_p } : {}),
           ...(body.max_tokens ? { maxOutputTokens: body.max_tokens } : {}),
-          // JSON 模式:agent 拿结构化结果时会用
-          ...(body.response_format?.type === 'json_object' ? { responseMimeType: 'application/json' } : {}),
+          // JSON 模式 / JSON Schema 约束:agent 拿结构化结果时会用
+          ...geminiStructuredOutput(body.response_format),
           ...(thinkingBudget(body) > 0
             ? { thinkingConfig: { thinkingBudget: thinkingBudget(body), includeThoughts: true } }
             : {})

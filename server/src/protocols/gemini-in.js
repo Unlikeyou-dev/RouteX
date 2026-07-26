@@ -33,7 +33,18 @@ export function geminiRequestToOpenAI(body, model) {
     ...(gc.temperature !== undefined ? { temperature: gc.temperature } : {}),
     ...(gc.topP !== undefined ? { top_p: gc.topP } : {}),
     ...(gc.stopSequences?.length ? { stop: gc.stopSequences } : {}),
-    ...(gc.responseMimeType === 'application/json' ? { response_format: { type: 'json_object' } } : {})
+    // 带 schema 的要保住 schema 本身,只翻成 json_object 会把约束丢掉,
+    // 客户端明明给了结构却拿回自由格式的 JSON
+    ...(gc.responseSchema || gc.response_schema
+      ? {
+        response_format: {
+          type: 'json_schema',
+          json_schema: { name: 'response', schema: gc.responseSchema || gc.response_schema, strict: true }
+        }
+      }
+      : gc.responseMimeType === 'application/json'
+        ? { response_format: { type: 'json_object' } }
+        : {})
   }
 
   const si = body.systemInstruction || body.system_instruction

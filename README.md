@@ -24,6 +24,10 @@
 - **面向 Agent** — **function calling 全链路跨协议打通**:请求里的 `tools` / `tool_choice`、assistant 回复里的 `tool_calls`、
   `role:"tool"` 的执行结果,在 Claude 与 Gemini 原生协议上双向无损转换,流式的工具参数增量也逐块转发。
   多轮工具循环、并行工具调用、多模态图片输入(agent 截图)均可直接使用
+- **结构化输出跨协议** — `response_format` 三家写法各不相同(Anthropic 是 `output_config.format`、Gemini 是 `responseSchema`),
+  不翻译就等于**静默丢弃**:用户要的是能 `JSON.parse` 的结果,拿到的却是一段散文且没有任何报错。
+  两家接受的 schema 子集都比 OpenAI 窄,已各自裁剪;pydantic / zod 必定生成的 `$defs` + `$ref` 会就地展开
+  (不展开那一层字段会悄悄变空,比直接报错还难查);Claude 4.5 以前的模型不支持则退回把 schema 写进 system 兜底
 - **多协议上游** — 除 OpenAI 兼容渠道外,支持 **Claude(Anthropic)/ Gemini(Google)原生 API** 自动协议转换,流式一并转换
 - **多渠道智能调度** — 优先级 + 权重加权分流,故障自动切换;**连续失败自动熔断**,后台定时探活、恢复后自动上线。
   定时探活默认走**免费的模型列表接口**(不消耗任何 token),需要严格验证时可切成真实对话;手动测试连通性始终发真实请求

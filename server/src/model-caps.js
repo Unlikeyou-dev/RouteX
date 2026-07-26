@@ -50,6 +50,16 @@ export const supportsThinkingBudget = model => !isModern(anthropicGeneration(mod
 
 export const supportsAdaptiveThinking = model => supportsAdaptive(anthropicGeneration(model))
 
+// output_config.format(结构化输出)从 Claude 4.5 起才有;更早的模型传了会 400,
+// 只能退回到「把 schema 写进 system」的兜底做法。
+export function supportsStructuredOutput(model) {
+  const gen = anthropicGeneration(model)
+  if (!gen) return true
+  if (gen.family === 'fable' || gen.family === 'mythos') return true
+  if (gen.major >= 5) return true
+  return gen.major === 4 && gen.minor >= 5
+}
+
 // xhigh / max 两档是 4.7 才加的
 export function normalizeEffort(model, effort) {
   const e = String(effort || '').toLowerCase()
