@@ -124,7 +124,7 @@ function relayAuth(req, res, next) {
 // ---- 渠道选择 ----
 // 原生协议渠道只支持 chat;embeddings / completions 仅路由到 OpenAI 兼容渠道
 // 渠道分组:用户只会被路由到「服务其所在分组」的渠道(对齐 new-api)
-function pickChannels(model, path, group) {
+export function pickChannels(model, path, group) {
   const rows = db
     .prepare('SELECT * FROM channels WHERE status = 1 AND auto_disabled = 0 ORDER BY priority DESC')
     .all()

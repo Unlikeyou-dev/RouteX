@@ -1,8 +1,27 @@
 import { useEffect, useState } from 'react'
-import { Activity, Coins, Cpu, Wallet } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Activity, Coins, Cpu, Wallet, AlertTriangle } from 'lucide-react'
 import { api, fmtUSD, fmtNum, fmtTime } from '../api.js'
 import { AreaChart, BarList } from '../components/charts.jsx'
 import { PageHeader, Spinner, Empty } from '../components/ui.jsx'
+
+// 余额预警:按最近有消耗的那几天算日均,估还能撑几天。
+// 只在「已经用完」或「不足三天」时出现,平时不打扰。
+function balanceWarning(quota, series) {
+  if (quota <= 0) {
+    return { level: 'bad', text: '账户余额已用尽,新的 API 调用会被拒绝。' }
+  }
+  const spent = series.map(s => Number(s.cost) || 0).filter(v => v > 0)
+  if (spent.length === 0) return null
+  const avg = spent.reduce((a, b) => a + b, 0) / spent.length
+  if (avg <= 0) return null
+  const daysLeft = quota / avg
+  if (daysLeft >= 3) return null
+  return {
+    level: 'warn',
+    text: `按最近用量估算,当前余额约还能用 ${daysLeft < 1 ? '不到 1' : Math.floor(daysLeft)} 天。`
+  }
+}
 
 const METRICS = [
   { key: 'cost', label: '消耗金额', format: v => fmtUSD(v) },
@@ -38,10 +57,25 @@ export default function Dashboard() {
 
   const { today, series, models, recent, user } = data
   const m = METRICS.find(x => x.key === metric)
+  const warn = balanceWarning(user.quota, series)
 
   return (
     <div className="animate-fade-up">
       <PageHeader title="仪表盘" desc={`欢迎回来,${user.username}。这是你最近 14 天的使用概况。`} />
+
+      {warn && (
+        <div
+          className={`mb-5 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3.5 ${
+            warn.level === 'bad' ? 'border-red-200 bg-badbg' : 'border-amber-200 bg-warnbg'
+          }`}
+        >
+          <AlertTriangle size={17} className={`shrink-0 ${warn.level === 'bad' ? 'text-bad' : 'text-warn'}`} />
+          <span className={`flex-1 text-sm leading-6 ${warn.level === 'bad' ? 'text-bad' : 'text-warn'}`}>
+            {warn.text}
+          </span>
+          <Link to="/console/wallet" className="btn-primary !py-2">立即充值</Link>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard icon={Wallet} label="账户余额" value={fmtUSD(user.quota, 2)} sub={`累计消耗 ${fmtUSD(user.used_quota)}`} />

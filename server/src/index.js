@@ -18,6 +18,7 @@ import usersRoutes from './routes/users.js'
 import settingsRoutes from './routes/settings.js'
 import relayRoutes, { inflightRelayCount } from './relay.js'
 import groupsRoutes from './routes/groups.js'
+import adminRoutes from './routes/admin.js'
 import { startHealthChecker } from './health.js'
 import { startMaintenance } from './maintenance.js'
 import { db } from './db.js'
@@ -46,6 +47,7 @@ app.use('/api/topup', topupRoutes)
 app.use('/api/users', usersRoutes)
 app.use('/api/settings', settingsRoutes)
 app.use('/api/groups', groupsRoutes)
+app.use('/api/admin', adminRoutes)
 
 // OpenAI 兼容中转入口
 app.use('/v1', relayRoutes)

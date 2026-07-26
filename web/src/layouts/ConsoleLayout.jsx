@@ -2,12 +2,49 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate, Navigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, KeyRound, ScrollText, Boxes, Wallet, Waypoints,
-  Users, Ticket, Settings, LogOut, BookOpen, ShieldCheck, Menu, Receipt
+  Users, Ticket, Settings, LogOut, BookOpen, ShieldCheck, Menu, Receipt, PieChart,
+  Megaphone, X
 } from 'lucide-react'
 import Logo from '../components/Logo.jsx'
 import { Toaster } from '../components/ui.jsx'
 import { useAuth } from '../store.jsx'
-import { fmtUSD } from '../api.js'
+import { api, fmtUSD } from '../api.js'
+
+// 站点公告原先只显示在落地页,登录后的用户完全看不到 ——
+// 涨价、维护这类通知等于发不出去。这里在控制台顶部补一条,
+// 关闭状态按内容记住,站长改了公告会重新出现。
+function Announcement() {
+  const [text, setText] = useState('')
+  const [dismissed, setDismissed] = useState(true)
+
+  useEffect(() => {
+    api('/settings/public')
+      .then(s => {
+        const msg = (s?.announcement || '').trim()
+        setText(msg)
+        setDismissed(msg ? localStorage.getItem('routex_ann') === msg : true)
+      })
+      .catch(() => {})
+  }, [])
+
+  if (!text || dismissed) return null
+  return (
+    <div className="flex items-start gap-3 border-b border-brand-100 bg-brand-50 px-4 py-2.5 sm:px-6">
+      <Megaphone size={15} className="mt-0.5 shrink-0 text-brand-600" />
+      <p className="flex-1 whitespace-pre-wrap text-[13px] leading-6 text-brand-700">{text}</p>
+      <button
+        className="shrink-0 rounded p-1 text-brand-600/70 transition-colors hover:text-brand-700"
+        title="不再提示"
+        onClick={() => {
+          localStorage.setItem('routex_ann', text)
+          setDismissed(true)
+        }}
+      >
+        <X size={15} />
+      </button>
+    </div>
+  )
+}
 
 const userNav = [
   { to: '/console', icon: LayoutDashboard, label: '仪表盘', end: true },
@@ -19,6 +56,7 @@ const userNav = [
 ]
 
 const adminNav = [
+  { to: '/console/overview', icon: PieChart, label: '全站总览' },
   { to: '/console/channels', icon: Waypoints, label: '上游渠道' },
   { to: '/console/users', icon: Users, label: '用户管理' },
   { to: '/console/topups', icon: Receipt, label: '充值订单' },
@@ -140,6 +178,7 @@ export default function ConsoleLayout() {
             <span className="font-semibold text-ink">{fmtUSD(user.quota, 2)}</span>
           </NavLink>
         </header>
+        <Announcement />
         <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
           <Outlet />
         </main>
