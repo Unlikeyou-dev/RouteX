@@ -187,7 +187,13 @@ const defaultSettings = {
   // 冻结额度的安全边际,覆盖上游分词口径差异
   precharge_margin: '1.2',
   // 单用户在途请求上限,0 = 不限
-  max_concurrent_per_user: '10'
+  max_concurrent_per_user: '10',
+  // 单令牌每分钟请求上限,0 = 不限
+  relay_rate_limit_per_min: '0',
+  // 运维:调用日志保留天数(0 = 永久),数据库每日备份与保留份数
+  log_retention_days: '90',
+  backup_enabled: '1',
+  backup_keep: '7'
 }
 const insSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
 for (const [k, v] of Object.entries(defaultSettings)) insSetting.run(k, v)

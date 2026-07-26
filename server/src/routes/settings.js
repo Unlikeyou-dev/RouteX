@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { getSetting, setSetting } from '../db.js'
 import { authRequired, adminRequired } from '../middleware/auth.js'
 import { barkPush } from '../bark.js'
+import { backupNow, listBackups, pruneLogs } from '../maintenance.js'
 
 const router = Router()
 
@@ -11,7 +12,10 @@ const ADMIN_KEYS = [
   // 收款与推送
   'pay_qr_alipay', 'pay_qr_wechat', 'cny_rate', 'topup_min', 'bark_key', 'bark_server',
   // 风控
-  'precharge_completion_tokens', 'precharge_margin', 'max_concurrent_per_user'
+  'precharge_completion_tokens', 'precharge_margin', 'max_concurrent_per_user',
+  'relay_rate_limit_per_min',
+  // 运维
+  'log_retention_days', 'backup_enabled', 'backup_keep'
 ]
 
 // 公开站点信息(落地页使用)
@@ -27,7 +31,8 @@ router.get('/', authRequired, adminRequired, (req, res) => {
 
 const NUMERIC_KEYS = [
   'price_ratio', 'signup_bonus', 'aff_rebate_percent', 'cny_rate', 'topup_min',
-  'precharge_completion_tokens', 'precharge_margin', 'max_concurrent_per_user'
+  'precharge_completion_tokens', 'precharge_margin', 'max_concurrent_per_user',
+  'relay_rate_limit_per_min', 'log_retention_days', 'backup_keep'
 ]
 // 收款码允许 http(s) 图片地址或 data URI(前端本地选图后转 base64,省掉一套上传接口)
 const MAX_QR_LEN = 4 * 1024 * 1024
@@ -57,6 +62,28 @@ router.put('/', authRequired, adminRequired, (req, res) => {
     if (req.body?.[key] !== undefined) setSetting(key, req.body[key])
   }
   res.json({ success: true })
+})
+
+// ---- 运维:备份与日志清理 ----
+router.get('/backups', authRequired, adminRequired, (req, res) => {
+  res.json({ success: true, data: listBackups() })
+})
+
+router.post('/backup', authRequired, adminRequired, async (req, res) => {
+  try {
+    const info = await backupNow()
+    res.json({ success: true, data: info })
+  } catch (e) {
+    res.status(500).json({ success: false, message: `备份失败:${e.message}` })
+  }
+})
+
+router.post('/prune-logs', authRequired, adminRequired, (req, res) => {
+  try {
+    res.json({ success: true, data: { removed: pruneLogs() } })
+  } catch (e) {
+    res.status(500).json({ success: false, message: `清理失败:${e.message}` })
+  }
 })
 
 // 测试推送:让管理员填完 Bark Key 就能立刻确认通不通

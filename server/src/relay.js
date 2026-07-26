@@ -5,6 +5,7 @@ import { computeCost } from './pricing.js'
 import { RELAY_TIMEOUT_MS } from './config.js'
 import { buildUpstreamRequest, convertResponse, createStreamTransformer } from './adapters.js'
 import { splitModels, splitList, channelServesGroup, redactSecrets } from './util.js'
+import { consumeRelayQuota } from './middleware/ratelimit.js'
 
 const router = Router()
 
@@ -42,18 +43,31 @@ function releaseQuota(userId, amount) {
 
 // 每用户在途请求数(内存态,够单机用;设为 0 表示不限)
 const inflight = new Map()
+let inflightTotal = 0
+
 function acquireSlot(userId) {
   const limit = maxConcurrent()
   const cur = inflight.get(userId) || 0
   if (limit > 0 && cur >= limit) return false
   inflight.set(userId, cur + 1)
+  inflightTotal++
   return true
 }
 function releaseSlot(userId) {
   const cur = inflight.get(userId) || 0
   if (cur <= 1) inflight.delete(userId)
   else inflight.set(userId, cur - 1)
+  if (inflightTotal > 0) inflightTotal--
 }
+
+// 优雅退出时要等这些请求做完 —— 中途被切断的请求已经花了上游的钱却还没落账,
+// 而且预扣的额度也会悬空退不回去。
+export function inflightRelayCount() {
+  return inflightTotal
+}
+
+// 中转限流:按令牌计数,窗口固定 1 分钟,限额可在站点设置里调(0 = 不限)
+const relayRateLimit = () => Number(getSetting('relay_rate_limit_per_min', '0')) || 0
 
 function openaiError(res, status, message, code = null) {
   return res.status(status).json({ error: { message, type: 'routex_error', code } })
@@ -235,6 +249,10 @@ const RELAY_PATHS = ['/chat/completions', '/completions', '/embeddings']
 
 for (const path of RELAY_PATHS) {
   router.post(path, relayAuth, async (req, res) => {
+    // 频率限制:按令牌计,防止脚本刷爆上游限额
+    if (!consumeRelayQuota(`t${req.relayToken.id}`, 60_000, relayRateLimit())) {
+      return openaiError(res, 429, `请求过于频繁,该令牌每分钟最多 ${relayRateLimit()} 次`, 'rate_limit_exceeded')
+    }
     // 并发槽:防止单个用户把上游打爆(与预扣费互补,后者管钱、这里管压力)
     if (!acquireSlot(req.relayUser.id)) {
       return openaiError(res, 429, `并发请求数已达上限(${maxConcurrent()}),请稍后重试`, 'too_many_requests')

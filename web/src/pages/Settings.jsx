@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Save, Plus, Trash2, Upload, Bell, X, ShieldCheck } from 'lucide-react'
+import { Save, Plus, Trash2, Upload, Bell, X, ShieldCheck, HardDrive, Loader2 } from 'lucide-react'
 import { api } from '../api.js'
 import { toast, useAuth } from '../store.jsx'
-import { PageHeader, Spinner } from '../components/ui.jsx'
+import { PageHeader, Spinner, Switch } from '../components/ui.jsx'
 
 // 收款码截图动辄好几 MB,统一压到 600px / JPEG 再转 base64 存进设置,
 // 免得每次拉设置都拖上几兆。
@@ -82,11 +82,15 @@ export default function Settings() {
   const [groups, setGroups] = useState([])
   const [newGroup, setNewGroup] = useState({ name: '', ratio: 0.9 })
   const [busy, setBusy] = useState(false)
+  const [backups, setBackups] = useState([])
+  const [backingUp, setBackingUp] = useState(false)
 
   const loadGroups = () => api('/groups').then(setGroups).catch(() => {})
+  const loadBackups = () => api('/settings/backups').then(setBackups).catch(() => {})
   useEffect(() => {
     api('/settings').then(setForm).catch(e => toast(e.message, 'error'))
     loadGroups()
+    loadBackups()
   }, [])
 
   const save = async () => {
@@ -147,6 +151,31 @@ export default function Settings() {
       toast(e.message, 'error')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const runBackup = async () => {
+    setBackingUp(true)
+    try {
+      const info = await api('/settings/backup', { method: 'POST', body: {} })
+      toast(`已备份 ${info.file}(${(info.size / 1024 / 1024).toFixed(2)} MB)`, 'success')
+      loadBackups()
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setBackingUp(false)
+    }
+  }
+
+  const runPrune = async () => {
+    const days = Number(form.log_retention_days) || 0
+    if (!days) return toast('保留天数为 0(永久保留),无需清理', 'info')
+    if (!confirm(`确定删除 ${days} 天以前的调用日志吗?此操作不可撤销。`)) return
+    try {
+      const r = await api('/settings/prune-logs', { method: 'POST', body: {} })
+      toast(r.removed ? `已清理 ${r.removed} 条日志` : '没有需要清理的日志', 'success')
+    } catch (e) {
+      toast(e.message, 'error')
     }
   }
 
@@ -244,13 +273,96 @@ export default function Settings() {
                 />
               </div>
             </div>
+            <div>
+              <label className="label">单令牌每分钟请求上限</label>
+              <input
+                className="input"
+                type="number"
+                step="10"
+                min="0"
+                value={form.relay_rate_limit_per_min}
+                onChange={set('relay_rate_limit_per_min')}
+              />
+            </div>
             <p className="text-xs leading-5 text-ink-mute">
               请求未指定 max_tokens 时,我们会按「输出上限」注入给上游,让冻结额度成为真正的上界。
-              安全边际用于兜住上游分词口径与我们的差异(1.2 = 上浮 20%)。并发上限 0 表示不限。
+              安全边际用于兜住上游分词口径与我们的差异(1.2 = 上浮 20%)。并发与频率上限填 0 表示不限。
             </p>
             <button className="btn-primary" onClick={save} disabled={busy}>
               <Save size={15} /> 保存设置
             </button>
+          </div>
+
+          <div className="card space-y-4 p-6">
+            <h3 className="card-title flex items-center gap-2">
+              <HardDrive size={16} className="text-brand-600" /> 数据与备份
+            </h3>
+            <p className="-mt-2 text-xs leading-5 text-ink-mute">
+              调用日志只增不删会把磁盘吃满;余额、订单全在一个 SQLite 文件里,没有备份就是单点。
+              系统每天自动清理过期日志并热备份一次,下面也可以手动触发。
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">日志保留天数</label>
+                <input
+                  className="input"
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={form.log_retention_days}
+                  onChange={set('log_retention_days')}
+                />
+                <p className="mt-1.5 text-xs text-ink-mute">0 = 永久保留</p>
+              </div>
+              <div>
+                <label className="label">备份保留份数</label>
+                <input
+                  className="input"
+                  type="number"
+                  step="1"
+                  min="1"
+                  value={form.backup_keep}
+                  onChange={set('backup_keep')}
+                />
+                <p className="mt-1.5 text-xs text-ink-mute">超出的旧备份自动删除</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-line bg-panel px-4 py-3">
+              <div>
+                <div className="text-sm font-medium">每日自动备份</div>
+                <div className="text-xs text-ink-mute">备份存放于 server/data/backups</div>
+              </div>
+              <Switch
+                checked={form.backup_enabled === '1'}
+                onChange={v => setForm(f => ({ ...f, backup_enabled: v ? '1' : '0' }))}
+              />
+            </div>
+
+            {backups.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-mute">
+                  最近备份({backups.length})
+                </div>
+                {backups.slice(0, 5).map(b => (
+                  <div key={b.file} className="flex items-center justify-between rounded-lg border border-line bg-panel px-3 py-2 text-[13px]">
+                    <span className="font-mono text-ink-dim">{b.file}</span>
+                    <span className="tabular-nums text-ink-mute">{(b.size / 1024 / 1024).toFixed(2)} MB</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <button className="btn-primary" onClick={save} disabled={busy}>
+                <Save size={15} /> 保存设置
+              </button>
+              <button className="btn-ghost" onClick={runBackup} disabled={backingUp}>
+                {backingUp ? <Loader2 size={15} className="animate-spin" /> : <HardDrive size={15} />} 立即备份
+              </button>
+              <button className="btn-ghost" onClick={runPrune} disabled={busy}>
+                <Trash2 size={15} /> 清理过期日志
+              </button>
+            </div>
           </div>
 
           <div className="card space-y-4 p-6">
