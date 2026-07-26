@@ -19,9 +19,13 @@
 - **渠道多 Key 轮询** — 一个渠道可挂多把上游 Key(每行一把),请求时随机轮询分摊限额
 - **精确按量计费** — usage 优先,缺失时用 **gpt-tokenizer 分词器精确计数**;金额收敛到微美元精度防浮点漂移
 - **缓存折扣透传** — 命中上游 prompt cache 的输入 token 按折扣价计费,折扣如实传给用户(实测同样 100 万输入,90% 命中后从 $10 降到 $1.90)。
-  三家统计口径不同(OpenAI/Gemini 的 prompt_tokens 含缓存、Anthropic 不含)已在适配层归一化;倍率可全局设也可按模型单独设
-- **思考链透传** — `reasoning_effort` 自动换算成 Claude 的 thinking 预算与 Gemini 的 thinkingConfig;
-  思考内容走 `reasoning_content` 不混进正文,流式增量一并转换,思考 token 单独统计
+  三家统计口径不同(OpenAI/Gemini 的 prompt_tokens 含缓存、Anthropic 不含)已在适配层归一化;倍率可全局设也可按模型单独设。
+  Anthropic 的缓存必须显式打 `cache_control` 标记而 OpenAI 协议里没有这个字段,因此**自动注入缓存断点**(tools / system / 上一轮),否则缓存永远不会命中
+- **思考链透传** — `reasoning_effort` 按模型世代自动适配:当前 Claude 走 `thinking:{type:"adaptive"}` + `output_config.effort`,
+  旧模型回落 `budget_tokens`;Gemini 走 thinkingConfig。思考内容走 `reasoning_content` 不混进正文,
+  **带 signature 的思考块原样往返**(丢了多轮 agent 第二轮就会 400),流式增量一并转换
+- **模型世代适配** — 采样参数、思考参数在不同世代的 Claude 上接受度完全不同(`temperature` 在 Opus 4.7+ 上直接 400),
+  按模型名解析世代自动裁剪,用户不必关心自己用的是哪一代
 - **用户分组倍率** — 按组差异化定价(如批发组更低倍率),最终价 = 基础价 × 站点倍率 × 分组倍率
 - **邀请返利** — 专属邀请链接,被邀请人每次兑换充值,邀请人按可配置比例自动得返利
 - **模型即选即用** — 渠道支持的模型可**一键从上游拉取**(`/v1/models`)后勾选,也可填入常用清单或手动追加,不用再手打一长串模型名

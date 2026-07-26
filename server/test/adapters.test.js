@@ -31,11 +31,10 @@ const WEATHER_TOOL = {
 
 test('工具定义:OpenAI → Anthropic', () => {
   const p = build(anthropic, { messages: [{ role: 'user', content: 'hi' }], tools: [WEATHER_TOOL] })
-  assert.deepEqual(p.tools, [{
-    name: 'get_weather',
-    description: '查询天气',
-    input_schema: WEATHER_TOOL.function.parameters
-  }])
+  assert.equal(p.tools.length, 1)
+  assert.equal(p.tools[0].name, 'get_weather')
+  assert.equal(p.tools[0].description, '查询天气')
+  assert.deepEqual(p.tools[0].input_schema, WEATHER_TOOL.function.parameters)
 })
 
 test('工具定义:OpenAI → Gemini,并剔掉它不认的 schema 关键字', () => {

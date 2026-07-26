@@ -126,21 +126,35 @@ test('查价:缓存价从输入价按倍率推导', () => {
 
 // ---------- 思考链 ----------
 
-test('思考链:reasoning_effort 换算成 Anthropic 的 thinking 预算', () => {
+test('思考链:当前模型走 adaptive + effort,绝不能再发 budget_tokens', () => {
   const msgs = [{ role: 'user', content: 'hi' }]
-  assert.equal(build(anthropic, { messages: msgs }).thinking, undefined)
-  const p = build(anthropic, { messages: msgs, reasoning_effort: 'high' })
-  assert.deepEqual(p.thinking, { type: 'enabled', budget_tokens: 16384 })
-  // Anthropic 要求 max_tokens 大于思考预算,否则直接 400
-  assert.ok(p.max_tokens > 16384, `max_tokens 必须给思考留出空间,实际 ${p.max_tokens}`)
+  const build5 = body => buildUpstreamRequest(anthropic, 'k', '/chat/completions', body, 'claude-opus-5', false).payload
+
+  assert.equal(build5({ messages: msgs }).thinking, undefined)
+
+  const p = build5({ messages: msgs, reasoning_effort: 'high' })
+  // budget_tokens 在 Opus 4.7+ 上会直接 400
+  assert.equal(p.thinking.type, 'adaptive')
+  assert.ok(!('budget_tokens' in p.thinking), 'budget_tokens 在当前模型上会 400')
+  assert.deepEqual(p.output_config, { effort: 'high' })
+  // 默认是 omitted,不显式要 summarized 就拿不到思考内容
+  assert.equal(p.thinking.display, 'summarized')
 })
 
-test('思考链:显式给的预算优先于 effort 档位', () => {
-  const p = build(anthropic, {
-    messages: [{ role: 'user', content: 'hi' }],
-    reasoning_effort: 'low',
-    thinking: { budget_tokens: 9999 }
-  })
+test('思考链:老模型仍用 budget_tokens,且 max_tokens 要大于预算', () => {
+  const old = body => buildUpstreamRequest(anthropic, 'k', '/chat/completions', body, 'claude-sonnet-4-5', false).payload
+  const p = old({ messages: [{ role: 'user', content: 'hi' }], reasoning_effort: 'high' })
+  assert.deepEqual(p.thinking, { type: 'enabled', budget_tokens: 16384 })
+  assert.ok(p.max_tokens > 16384, `max_tokens 必须给思考留出空间,实际 ${p.max_tokens}`)
+  assert.equal(p.output_config, undefined, '老模型不认 output_config')
+})
+
+test('思考链:显式给的预算在老模型上优先于 effort 档位', () => {
+  const p = buildUpstreamRequest(
+    anthropic, 'k', '/chat/completions',
+    { messages: [{ role: 'user', content: 'hi' }], reasoning_effort: 'low', thinking: { budget_tokens: 9999 } },
+    'claude-sonnet-4-5', false
+  ).payload
   assert.equal(p.thinking.budget_tokens, 9999)
 })
 

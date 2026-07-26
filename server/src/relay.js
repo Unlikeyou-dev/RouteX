@@ -3,7 +3,7 @@ import { encode } from 'gpt-tokenizer'
 import { db, now, getSetting } from './db.js'
 import { computeCost } from './pricing.js'
 import { RELAY_TIMEOUT_MS } from './config.js'
-import { buildUpstreamRequest, convertResponse, createStreamTransformer } from './adapters.js'
+import { buildUpstreamRequest, convertResponse, createStreamTransformer, wantsThinking } from './adapters.js'
 import { splitModels, splitList, channelServesGroup, redactSecrets } from './util.js'
 import { consumeRelayQuota } from './middleware/ratelimit.js'
 
@@ -18,6 +18,7 @@ const FAIL_THRESHOLD = 3
 // 上游成本远超其余额(实测:$0.1 余额并发 20 个请求可造成 $72 的敞口)。
 // 因此改为请求前按「输入 + 预估输出」原子冻结额度,响应后按实际用量多退少补。
 const estimatedCompletion = () => Number(getSetting('precharge_completion_tokens', '4096')) || 4096
+const thinkingAllowance = () => Number(getSetting('precharge_thinking_tokens', '8192')) || 8192
 const maxConcurrent = () => Number(getSetting('max_concurrent_per_user', '0')) || 0
 // 安全边际:输出侧我们能靠注入 max_tokens 卡死上界,输入侧不能 ——
 // 上游用的分词器和我们不同(多模态、缓存、系统提示注入都会让它数出更多),
@@ -346,7 +347,13 @@ async function handleRelay(req, res, path) {
   // 再发给上游 —— 上游就不可能返回超过我们已经冻结的量。
   const isEmbedding = path === '/embeddings'
   const requestedMax = Number(body.max_tokens || body.max_completion_tokens) || 0
-  const outputCap = isEmbedding ? 0 : (requestedMax > 0 ? requestedMax : estimatedCompletion())
+  // 思考 token 和正文共用 max_tokens。开了思考还按默认上限注入的话,
+  // 思考会把额度吃光、正文被截断 —— 所以要额外留出思考的空间,
+  // 并且这部分也必须计入预扣,否则又是一个低估。
+  const thinkingRoom = !isEmbedding && wantsThinking(body) ? thinkingAllowance() : 0
+  const outputCap = isEmbedding
+    ? 0
+    : (requestedMax > 0 ? requestedMax : estimatedCompletion() + thinkingRoom)
   const cappedBody = isEmbedding || requestedMax > 0 ? body : { ...body, max_tokens: outputCap }
 
   const promptTokens = countPromptTokens(body)

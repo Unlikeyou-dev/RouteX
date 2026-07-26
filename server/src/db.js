@@ -207,8 +207,12 @@ const defaultSettings = {
   bark_server: 'https://api.day.app',
   // 风控:请求前预扣费时假定的输出 token 数(请求自带 max_tokens 时以它为准)
   precharge_completion_tokens: '4096',
+  // 开启思考时额外预留(并预扣)的 token,思考与正文共用 max_tokens
+  precharge_thinking_tokens: '8192',
   // 冻结额度的安全边际,覆盖上游分词口径差异
   precharge_margin: '1.2',
+  // 自动为原生 Anthropic 请求注入 cache_control 断点
+  anthropic_auto_cache: '1',
   // 单用户在途请求上限,0 = 不限
   max_concurrent_per_user: '10',
   // 单令牌每分钟请求上限,0 = 不限

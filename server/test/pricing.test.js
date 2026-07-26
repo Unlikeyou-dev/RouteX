@@ -85,6 +85,6 @@ test('建议价:按最长前缀匹配内置价格库', () => {
   assert.deepEqual(suggestPrice('gpt-4o'), [2.5, 10])
   // gpt-4o-mini 应该匹配到自己而不是更短的 gpt-4o
   assert.deepEqual(suggestPrice('gpt-4o-mini'), [0.15, 0.6])
-  assert.deepEqual(suggestPrice('claude-sonnet-4-20250514-preview'), [3, 15])
+  assert.deepEqual(suggestPrice('claude-sonnet-5-thinking'), [3, 15])
   assert.deepEqual(suggestPrice('某个没见过的模型'), [1, 2])
 })

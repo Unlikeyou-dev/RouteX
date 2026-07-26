@@ -19,8 +19,10 @@ export const presetModels = {
     'deepseek-chat', 'deepseek-reasoner',
     'qwen-max', 'qwen-plus', 'glm-4-plus'
   ],
+  // 只列当前在售的型号 —— 带日期后缀的老 ID 大多已退役,填进去直接 404
   anthropic: [
-    'claude-opus-4-20250514', 'claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022'
+    'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5',
+    'claude-opus-4-8', 'claude-sonnet-4-6'
   ],
   gemini: [
     'gemini-2.5-pro', 'gemini-2.5-flash'

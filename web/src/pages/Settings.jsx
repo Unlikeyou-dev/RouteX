@@ -286,15 +286,41 @@ export default function Settings() {
                 />
               </div>
             </div>
-            <div>
-              <label className="label">单令牌每分钟请求上限</label>
-              <input
-                className="input"
-                type="number"
-                step="10"
-                min="0"
-                value={form.relay_rate_limit_per_min}
-                onChange={set('relay_rate_limit_per_min')}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">单令牌每分钟请求上限</label>
+                <input
+                  className="input"
+                  type="number"
+                  step="10"
+                  min="0"
+                  value={form.relay_rate_limit_per_min}
+                  onChange={set('relay_rate_limit_per_min')}
+                />
+              </div>
+              <div>
+                <label className="label">思考额外预留 tokens</label>
+                <input
+                  className="input"
+                  type="number"
+                  step="1024"
+                  min="0"
+                  value={form.precharge_thinking_tokens}
+                  onChange={set('precharge_thinking_tokens')}
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-line bg-panel px-4 py-3">
+              <div>
+                <div className="text-sm font-medium">Anthropic 自动缓存</div>
+                <div className="text-xs leading-5 text-ink-mute">
+                  自动注入 cache_control 断点。Anthropic 的缓存必须显式标记,不注入就永远不会命中;
+                  内容长度不够时上游会静默忽略,不产生额外费用。
+                </div>
+              </div>
+              <Switch
+                checked={form.anthropic_auto_cache === '1'}
+                onChange={v => setForm(f => ({ ...f, anthropic_auto_cache: v ? '1' : '0' }))}
               />
             </div>
             <p className="text-xs leading-5 text-ink-mute">
