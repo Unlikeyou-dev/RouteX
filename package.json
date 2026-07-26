@@ -1,0 +1,13 @@
+{
+  "name": "routex",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RouteX — 稳定、快速、优惠的大模型 API 中转站",
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix web install",
+    "dev:server": "npm --prefix server run dev",
+    "dev:web": "npm --prefix web run dev",
+    "build": "npm --prefix web run build",
+    "start": "npm --prefix server run start"
+  }
+}
