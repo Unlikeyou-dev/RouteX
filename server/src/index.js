@@ -21,7 +21,8 @@ import groupsRoutes from './routes/groups.js'
 import adminRoutes from './routes/admin.js'
 import { startHealthChecker } from './health.js'
 import { startMaintenance } from './maintenance.js'
-import { db } from './db.js'
+import { db, getSetting } from './db.js'
+import { splitList } from './util.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -33,9 +34,30 @@ app.use((req, res, next) => {
   res.set('Referrer-Policy', 'no-referrer')
   next()
 })
-app.use(cors())
+// CORS 分两档:
+// · 中转入口(/v1、/v1beta)必须开放 —— 用户会从浏览器里的应用直连,
+//   而且那里的凭据是用户自己的 API Key,不存在被跨站冒用的问题
+// · 控制台接口(/api)默认只允许同源。前端和后端是同一个服务托管的,
+//   同源请求根本不需要 CORS;把它开放给任意源纯粹是白送攻击面
+const relayCors = cors()
+const apiCors = (req, res, next) => {
+  const origin = req.headers.origin
+  if (!origin) return next() // 同源或非浏览器请求
+  const allowed = splitList(getSetting('cors_origins', ''))
+  if (allowed.includes(origin) || allowed.includes('*')) {
+    res.set('Access-Control-Allow-Origin', origin)
+    res.set('Vary', 'Origin')
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+    if (req.method === 'OPTIONS') return res.sendStatus(204)
+  }
+  // 不在白名单里就不发 CORS 头,浏览器自己会拦下来
+  next()
+}
+
 app.use(express.json({ limit: '32mb' }))
 
+app.use('/api', apiCors)
 app.use('/api/auth', authRoutes)
 app.use('/api/user', userRoutes)
 app.use('/api/tokens', tokenRoutes)
@@ -52,8 +74,8 @@ app.use('/api/admin', adminRoutes)
 // 中转入口:三种入站协议
 // /v1      OpenAI 兼容 + Anthropic Messages(/v1/messages)
 // /v1beta  Gemini(/v1beta/models/{model}:generateContent)
-app.use('/v1', relayRoutes)
-app.use('/v1beta', geminiRouter)
+app.use('/v1', relayCors, relayRoutes)
+app.use('/v1beta', relayCors, geminiRouter)
 
 app.get('/api/health', (req, res) => res.json({ success: true, name: 'RouteX', time: Date.now() }))
 

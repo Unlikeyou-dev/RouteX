@@ -323,6 +323,19 @@ export default function Settings() {
                 onChange={v => setForm(f => ({ ...f, anthropic_auto_cache: v ? '1' : '0' }))}
               />
             </div>
+            <div>
+              <label className="label">控制台跨域白名单</label>
+              <input
+                className="input"
+                placeholder="留空 = 仅同源(推荐);多个用逗号分隔,如 https://panel.example.com"
+                value={form.cors_origins}
+                onChange={set('cors_origins')}
+              />
+              <p className="mt-1.5 text-xs leading-5 text-ink-mute">
+                只影响控制台接口(/api)。留空时其他网站无法借用户浏览器里的登录态调管理接口。
+                中转接口(/v1、/v1beta)不受此项限制,始终对所有来源开放 —— 客户端拿自己的 Key 直连。
+              </p>
+            </div>
             <p className="text-xs leading-5 text-ink-mute">
               请求未指定 max_tokens 时,我们会按「输出上限」注入给上游,让冻结额度成为真正的上界。
               安全边际用于兜住上游分词口径与我们的差异(1.2 = 上浮 20%)。并发与频率上限填 0 表示不限。

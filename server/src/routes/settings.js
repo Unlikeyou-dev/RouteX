@@ -15,7 +15,7 @@ const ADMIN_KEYS = [
   // 风控
   'precharge_completion_tokens', 'precharge_thinking_tokens', 'precharge_margin',
   'max_concurrent_per_user', 'relay_rate_limit_per_min', 'relay_retry_channels',
-  'anthropic_auto_cache',
+  'anthropic_auto_cache', 'cors_origins',
   // 运维
   'log_retention_days', 'backup_enabled', 'backup_keep',
   'health_check_enabled', 'health_check_mode', 'health_sweep_minutes'

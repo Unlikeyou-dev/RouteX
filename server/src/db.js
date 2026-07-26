@@ -213,6 +213,8 @@ const defaultSettings = {
   precharge_margin: '1.2',
   // 自动为原生 Anthropic 请求注入 cache_control 断点
   anthropic_auto_cache: '1',
+  // 控制台接口允许的跨域来源(逗号分隔,留空 = 仅同源)。中转入口不受此限制
+  cors_origins: '',
   // 单用户在途请求上限,0 = 不限
   max_concurrent_per_user: '10',
   // 单令牌每分钟请求上限,0 = 不限

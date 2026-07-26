@@ -13,6 +13,9 @@ import {
 import {
   geminiRequestToOpenAI, openaiResponseToGemini, createGeminiEncoder, geminiErrorBody
 } from './protocols/gemini-in.js'
+import {
+  responsesRequestToOpenAI, openaiResponseToResponses, createResponsesEncoder
+} from './protocols/responses-in.js'
 import { splitModels, splitList, channelServesGroup, redactSecrets } from './util.js'
 import { consumeRelayQuota } from './middleware/ratelimit.js'
 
@@ -358,6 +361,20 @@ router.post('/messages', markFormat('anthropic'), relayAuth, async (req, res) =>
   await guarded(req, res, () => handleRelay(req, res, '/chat/completions'))
 })
 
+// ---- OpenAI Responses 入站 ----
+// 同属 OpenAI 但结构差别不小,而且不是所有上游中转站都实现了 /v1/responses,
+// 所以一律转成 chat/completions 发给上游 —— 兼容性优先于透传。
+router.post('/responses', markFormat('responses'), relayAuth, async (req, res) => {
+  const native = req.body || {}
+  try {
+    req.canonicalBody = responsesRequestToOpenAI(native)
+  } catch (e) {
+    return fail(req, res, 400, e.message, 'invalid_request')
+  }
+  req.nativeBody = native
+  await guarded(req, res, () => handleRelay(req, res, '/chat/completions'))
+})
+
 // ---- Gemini 入站 ----
 // 路径形如 /v1beta/models/gemini-2.5-pro:generateContent —— 模型名和方法名
 // 用冒号连在同一段里,所以整段先当参数取下来再按最后一个冒号切开。
@@ -589,6 +606,9 @@ async function relayJson(req, res, upstream, channel, model, body, start, reserv
       io.passthrough ? { ...raw, modelVersion: model } : openaiResponseToGemini(data, model)
     )
   }
+  if (req.inFormat === 'responses') {
+    return res.status(200).json(openaiResponseToResponses(data, model))
+  }
   res.status(200).json(data)
 }
 
@@ -608,7 +628,9 @@ async function relayStream(req, res, upstream, channel, model, body, start, rese
   // 入站不是 OpenAI 且不是透传时,还要把 OpenAI SSE 编码成入站协议的事件
   const reencode = req.inFormat !== 'openai' && !io.passthrough
   const encoder = !reencode ? null
-    : (req.inFormat === 'anthropic' ? createAnthropicEncoder(model) : createGeminiEncoder(model))
+    : req.inFormat === 'anthropic' ? createAnthropicEncoder(model)
+      : req.inFormat === 'responses' ? createResponsesEncoder(model)
+        : createGeminiEncoder(model)
   // 入站与上游同协议:字节原样转发,只旁路统计用量
   const rawPassthrough = io.passthrough || (req.inFormat === 'openai' && !nativeUpstream)
 

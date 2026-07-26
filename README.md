@@ -7,17 +7,20 @@
 
 ## ✨ 功能特性
 
-- **三协议入站** — 同一个站点同时提供三套入口,客户端用哪家的 SDK 都能直连:
+- **四协议入站** — 同一个站点同时提供四套入口,客户端用哪家的 SDK 都能直连:
 
   | 协议 | 入口 | 鉴权头 |
   | --- | --- | --- |
   | OpenAI 兼容 | `/v1/chat/completions`、`/v1/completions`、`/v1/embeddings` | `Authorization: Bearer` |
+  | OpenAI Responses | `/v1/responses` | `Authorization: Bearer` |
   | Anthropic Messages | `/v1/messages` | `x-api-key` |
   | Google Gemini | `/v1beta/models/{model}:generateContent`(含 `:streamGenerateContent`、`:countTokens`) | `x-goog-api-key` 或 `?key=` |
 
   入站协议与上游渠道相同时**原样透传**(`cache_control`、思考 signature、safetySettings、
-  乃至我们还不认识的新字段零损耗),不同时才做双向转换 —— 三种协议的流式 SSE 都完整转换,
-  错误体也按入站协议的结构返回
+  乃至我们还不认识的新字段零损耗),不同时才做双向转换 —— 各协议的流式 SSE 都完整转换
+  (Responses 出的是 `response.output_text.delta` 这类**带类型的事件**,不是统一 chunk),
+  错误体也按入站协议的结构返回。Responses 的有状态特性(`previous_response_id`)需要服务端存会话,
+  中转站不持有这些数据,因此明确报错而不是静默忽略 —— 静默忽略会让客户端拿到缺上下文的回答
 - **面向 Agent** — **function calling 全链路跨协议打通**:请求里的 `tools` / `tool_choice`、assistant 回复里的 `tool_calls`、
   `role:"tool"` 的执行结果,在 Claude 与 Gemini 原生协议上双向无损转换,流式的工具参数增量也逐块转发。
   多轮工具循环、并行工具调用、多模态图片输入(agent 截图)均可直接使用
@@ -51,7 +54,9 @@
 - **精致 UI** — 浅色专业主题、系统化排版、思源黑体本地化、自绘 SVG 图表
 - **额度风控** — 请求前按「输入 + 输出上限」**原子冻结额度**,响应后多退少补;未指定 `max_tokens` 时主动注入上限,让冻结量成为真正的上界。杜绝低余额账号并发白嫖(修复前:$0.1 余额并发 20 次可造成 $72 敞口;修复后为 0)
 - **上游错误脱敏** — 上游 4xx 不再原样透传:鉴权类错误只回通用文案并转移渠道,原文仅进服务端日志;写库前统一抹除各家密钥格式,避免 Key 从错误消息泄露给用户
-- **安全加固** — 登录/注册按 IP 限流、中转按令牌限频、单用户并发上限、安全响应头、参数化查询、JWT 鉴权
+- **安全加固** — 登录/注册按 IP 限流、中转按令牌限频、单用户并发上限、安全响应头、参数化查询、JWT 鉴权。
+  中转接口(`/v1`、`/v1beta`)对所有来源开放(客户端拿自己的 Key 直连),而控制台接口(`/api`)默认**仅同源可用**,
+  需要跨域时在「系统设置」里显式填白名单 —— 否则任意网站都能借用户浏览器里的登录态调管理接口
 - **运维自愈** — 调用日志按保留期自动清理(否则只增不删会吃满磁盘)、数据库**每日热备份**并轮转保留、
   收到 SIGTERM 时先停新连接再等在途请求排空、最后 checkpoint WAL 安全关库(硬杀会丢未落账的计费)
 
