@@ -17,7 +17,7 @@ router.post('/redeem', (req, res) => {
     db.prepare("UPDATE redemptions SET status = 'used', used_by = ?, used_at = ? WHERE id = ?").run(
       req.user.id, now(), row.id
     )
-    creditUser(req.user.id, row.amount)
+    creditUser(req.user.id, row.amount, { type: 'redeem', note: `兑换码 ${row.code}` })
     return row.amount
   })
   try {

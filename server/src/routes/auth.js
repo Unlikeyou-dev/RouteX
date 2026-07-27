@@ -5,6 +5,7 @@ import { signToken, publicUser } from '../middleware/auth.js'
 import { rateLimit } from '../middleware/ratelimit.js'
 import { badRequest, genInviteCode } from '../util.js'
 import { notify } from '../bark.js'
+import { recordLedger } from '../ledger.js'
 
 const router = Router()
 
@@ -34,6 +35,9 @@ router.post('/register', registerLimit, (req, res) => {
   if (inviter) {
     db.prepare('UPDATE users SET aff_count = aff_count + 1 WHERE id = ?').run(inviter.id)
   }
+  // 注册赠送是直接写进 INSERT 的初始余额,不走 creditUser —— 不补一笔流水,
+  // 这部分钱在对账时就会凭空多出来
+  if (bonus > 0) recordLedger({ userId: info.lastInsertRowid, amount: bonus, type: 'signup' })
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid)
   res.json({ success: true, data: { token: signToken(user), user: publicUser(user) } })
 })

@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Pencil, Trash2, KeyRound, Check } from 'lucide-react'
+import { Pencil, Trash2, KeyRound, Check, ScrollText, Scale, Loader2 } from 'lucide-react'
 import { api, fmtUSD, fmtNum, fmtTime } from '../api.js'
 import { toast } from '../store.jsx'
 import { Modal, PageHeader, Spinner, StatusChip, CopyButton } from '../components/ui.jsx'
+
+const LEDGER_LABEL = {
+  topup: '扫码充值', redeem: '兑换码', rebate: '邀请返利',
+  signup: '注册赠送', admin: '管理员调整', refund: '退款', opening: '期初结转'
+}
 
 export default function Users() {
   const [rows, setRows] = useState(null)
@@ -12,6 +17,9 @@ export default function Users() {
   const [reset, setReset] = useState(null)   // 重置结果:{username, password}
   const [form, setForm] = useState({ quota: 0, role: 'user', group_name: 'default' })
   const [busy, setBusy] = useState(false)
+  const [ledger, setLedger] = useState(null)
+  const [report, setReport] = useState(null)
+  const [checking, setChecking] = useState(false)
 
   const load = () => api('/users').then(setRows).catch(e => toast(e.message, 'error'))
   const loadResets = () => api('/users/resets').then(setResets).catch(() => {})
@@ -42,6 +50,30 @@ export default function Users() {
   }
 
   const pendingResets = resets.filter(r => r.status === 'pending')
+
+  const openLedger = async row => {
+    setLedger({ user: row, rows: null })
+    try {
+      const data = await api(`/users/${row.id}/ledger?page_size=100`)
+      setLedger(l => (l?.user.id === row.id ? { ...l, ...data } : l))
+    } catch (e) {
+      toast(e.message, 'error')
+      setLedger(l => (l ? { ...l, rows: [] } : l))
+    }
+  }
+
+  const runReconcile = async () => {
+    setChecking(true)
+    try {
+      const data = await api('/users/reconcile')
+      setReport(data)
+      if (!data.issues.length) toast(`对账通过,${data.checked} 个账户都对得上`, 'success')
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setChecking(false)
+    }
+  }
 
   const openEdit = row => {
     setForm({ quota: row.quota, role: row.role, group_name: row.group_name || 'default' })
@@ -87,7 +119,55 @@ export default function Users() {
 
   return (
     <div className="animate-fade-up">
-      <PageHeader title="用户管理" desc="管理注册用户的额度、角色与状态。" />
+      <PageHeader title="用户管理" desc="管理注册用户的额度、角色与状态。">
+        <button className="btn-ghost" onClick={runReconcile} disabled={checking}>
+          {checking ? <Loader2 size={15} className="animate-spin" /> : <Scale size={15} />}
+          余额对账
+        </button>
+      </PageHeader>
+
+      {report?.issues?.length > 0 && (
+        <div className="card mb-5 overflow-hidden border-bad/40">
+          <h3 className="card-title flex items-center gap-2 border-b border-line px-6 py-4">
+            <Scale size={16} className="text-bad" /> 对账异常
+            <span className="chip bg-badbg text-bad">{report.issues.length}</span>
+            <button className="ml-auto text-xs text-ink-mute hover:text-ink" onClick={() => setReport(null)}>关闭</button>
+          </h3>
+          <p className="px-6 pt-4 text-xs leading-5 text-ink-mute">
+            恒等式是「余额 = 流水合计 − 累计消费」。差额为正说明有绕过流水的入账,或者数据被直接改过;
+            差额为负一般是落账时余额兜底到 0 造成的 —— 那部分服务用户没付钱,平台自己吃了,
+            预扣费理论上不该让它发生,出现了就要查。
+          </p>
+          <div className="overflow-x-auto p-6 pt-3">
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  <th className="th">用户</th>
+                  <th className="th-r">当前余额</th>
+                  <th className="th-r">应有余额</th>
+                  <th className="th-r">差额</th>
+                  <th className="th-r">流水合计</th>
+                  <th className="th-r">累计消费</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line/60">
+                {report.issues.map(i => (
+                  <tr key={i.user_id}>
+                    <td className="td font-medium text-ink">{i.username}</td>
+                    <td className="td-r">{fmtUSD(i.quota)}</td>
+                    <td className="td-r">{fmtUSD(i.expected)}</td>
+                    <td className={`td-r font-medium ${i.diff > 0 ? 'text-bad' : 'text-warn'}`}>
+                      {i.diff > 0 ? '+' : ''}{fmtUSD(i.diff)}
+                    </td>
+                    <td className="td-r text-ink-mute">{fmtUSD(i.credited)}</td>
+                    <td className="td-r text-ink-mute">{fmtUSD(i.used_quota)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {pendingResets.length > 0 && (
         <div className="card mb-5 overflow-hidden">
@@ -172,6 +252,13 @@ export default function Users() {
                       >
                         <KeyRound size={15} />
                       </button>
+                      <button
+                        className="rounded-lg p-2 text-ink-mute hover:bg-panel hover:text-brand-600"
+                        title="余额流水"
+                        onClick={() => openLedger(row)}
+                      >
+                        <ScrollText size={15} />
+                      </button>
                       <button className="rounded-lg p-2 text-ink-mute hover:bg-panel hover:text-ink" onClick={() => openEdit(row)}>
                         <Pencil size={15} />
                       </button>
@@ -220,6 +307,54 @@ export default function Users() {
             <button className="btn-ghost" onClick={() => setModal(null)}>取消</button>
             <button className="btn-primary" onClick={submit} disabled={busy}>保存</button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!ledger}
+        onClose={() => setLedger(null)}
+        title={`余额流水 — ${ledger?.user?.username || ''}`}
+        width="max-w-3xl"
+      >
+        <div className="space-y-3">
+          <p className="text-xs leading-5 text-ink-mute">
+            只记非消费的变动(充值、兑换、返利、注册赠送、后台调整)—— 消费在「调用日志」里一条不落。
+            后台直接改余额也会在这里留痕,记的是差额和操作人。
+          </p>
+          {!ledger?.rows ? (
+            <Spinner />
+          ) : !ledger.rows.length ? (
+            <p className="py-8 text-center text-sm text-ink-mute">这个账户还没有余额变动</p>
+          ) : (
+            <div className="max-h-[60vh] overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-card">
+                  <tr>
+                    <th className="th">时间</th>
+                    <th className="th">类型</th>
+                    <th className="th-r">变动</th>
+                    <th className="th-r">变动后余额</th>
+                    <th className="th">说明</th>
+                    <th className="th">操作人</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line/60">
+                  {ledger.rows.map(r => (
+                    <tr key={r.id}>
+                      <td className="td whitespace-nowrap tabular-nums text-xs">{fmtTime(r.created_at)}</td>
+                      <td className="td"><span className="chip bg-panel text-ink-dim">{LEDGER_LABEL[r.type] || r.type}</span></td>
+                      <td className={`td-r font-medium ${r.amount > 0 ? 'text-ok' : 'text-bad'}`}>
+                        {r.amount > 0 ? '+' : ''}{fmtUSD(r.amount)}
+                      </td>
+                      <td className="td-r tabular-nums text-ink-dim">{fmtUSD(r.balance_after)}</td>
+                      <td className="td text-xs text-ink-mute">{r.note || '—'}</td>
+                      <td className="td text-xs text-ink-mute">{r.operator_name || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </Modal>
 

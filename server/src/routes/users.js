@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { db, now } from '../db.js'
 import { authRequired, adminRequired, publicUser } from '../middleware/auth.js'
 import { badRequest, usd, genTempPassword } from '../util.js'
+import { recordLedger, listLedger, reconcile } from '../ledger.js'
 
 const router = Router()
 router.use(authRequired, adminRequired)
@@ -44,6 +45,19 @@ router.get('/', (req, res) => {
   res.json({ success: true, data: rows.map(publicUser) })
 })
 
+// 对账:核对每个用户「流水合计 - 累计消费」是否等于当前余额。
+// 路由要放在 /:id 之前,否则 reconcile 会被当成用户 id
+router.get('/reconcile', (req, res) => {
+  res.json({ success: true, data: reconcile() })
+})
+
+router.get('/:id/ledger', (req, res) => {
+  const page = Math.max(1, Number(req.query.page) || 1)
+  const size = Math.min(100, Math.max(1, Number(req.query.page_size) || 20))
+  const { rows, total } = listLedger(Number(req.params.id), { limit: size, offset: (page - 1) * size })
+  res.json({ success: true, data: { rows, total, page, page_size: size } })
+})
+
 router.put('/:id', (req, res) => {
   const row = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
   if (!row) return badRequest(res, '用户不存在')
@@ -55,13 +69,27 @@ router.put('/:id', (req, res) => {
     const g = db.prepare('SELECT name FROM groups WHERE name = ?').get(group_name)
     if (!g) return badRequest(res, '分组不存在')
   }
-  db.prepare('UPDATE users SET quota = ?, role = ?, status = ?, group_name = ? WHERE id = ?').run(
-    quota !== undefined ? usd(quota) : row.quota,
-    role === 'admin' || role === 'user' ? role : row.role,
-    status !== undefined ? (status ? 1 : 0) : row.status,
-    group_name ?? row.group_name,
-    row.id
-  )
+  // 这里是直接把余额**设成**某个值,不是加减 —— 原来完全不留痕,
+  // 谁在什么时候把谁的余额从多少改成了多少,事后一概查不到
+  const newQuota = quota !== undefined ? usd(quota) : row.quota
+  const delta = usd(newQuota - row.quota)
+
+  db.transaction(() => {
+    db.prepare('UPDATE users SET quota = ?, role = ?, status = ?, group_name = ? WHERE id = ?').run(
+      newQuota,
+      role === 'admin' || role === 'user' ? role : row.role,
+      status !== undefined ? (status ? 1 : 0) : row.status,
+      group_name ?? row.group_name,
+      row.id
+    )
+    if (delta) {
+      recordLedger({
+        userId: row.id, amount: delta, type: 'admin',
+        note: `后台直接改余额:${usd(row.quota)} → ${newQuota}`,
+        operatorId: req.user.id
+      })
+    }
+  })()
   res.json({ success: true, data: publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(row.id)) })
 })
 

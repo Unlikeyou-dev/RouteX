@@ -157,6 +157,48 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_topups_order_no ON topups(order_n
 db.exec('CREATE INDEX IF NOT EXISTS idx_topups_status ON topups(status, id)')
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite ON users(invite_code)')
 
+// 余额变更流水。
+//
+// users.quota 只是个「当前值」,没有流水就有两个盲区:管理员在后台直接改余额
+// 完全不留痕,以及万一恢复到旧备份,你没法算出某个用户到底该有多少钱。
+// 充值有 topups、消费有 logs.cost,中间的手动调整原本是黑洞。
+//
+// 消费不进这张表(logs 已经一条不落地记了,再记一遍等于把最热的表写两遍),
+// 对账公式是:余额 = 流水合计 - 累计消费(users.used_quota,不随日志清理而丢失)。
+db.exec(`CREATE TABLE IF NOT EXISTS balance_ledger (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  amount REAL NOT NULL,
+  balance_after REAL NOT NULL,
+  type TEXT NOT NULL,
+  note TEXT,
+  operator_id INTEGER,
+  created_at INTEGER NOT NULL
+)`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_ledger_user ON balance_ledger(user_id, id)')
+
+// 期初结转:老库里的用户一条流水都没有,不补的话对账会把每个人都报成异常,
+// 这个功能在既有安装上就等于不能用。已知的只有「现在的余额」和「累计消费」,
+// 反推出历史入账总额 = 余额 + 消费,记成一笔期初 —— 拆不出明细,但从此刻起账是平的。
+{
+  const hasLedger = db.prepare('SELECT COUNT(*) AS c FROM balance_ledger').get().c > 0
+  const olds = hasLedger ? [] : db.prepare('SELECT id, quota, used_quota FROM users').all()
+  if (olds.length) {
+    const ins = db.prepare(
+      `INSERT INTO balance_ledger (user_id, amount, balance_after, type, note, created_at)
+       VALUES (?, ?, ?, 'opening', '期初结转(启用流水前的历史入账合计)', ?)`
+    )
+    const ts = Math.floor(Date.now() / 1000)
+    db.transaction(() => {
+      for (const u of olds) {
+        const opening = Math.round(((u.quota || 0) + (u.used_quota || 0)) * 1e6) / 1e6
+        if (opening) ins.run(u.id, opening, u.quota || 0, ts)
+      }
+    })()
+    console.log(`[RouteX] 已为 ${olds.length} 个既有账户补记期初流水`)
+  }
+}
+
 // 渠道兼容性自检结果:按「渠道 + 模型」记一份能力表。
 // 我们按模型名猜世代来裁剪参数,但上游是别人的中转站,改版、限制、魔改都可能
 // 让某个参数突然被拒 —— 那时用户看到的只是一片 400,没人知道是哪个字段的问题。
@@ -183,9 +225,15 @@ export function groupRatio(name) {
 // ---- seed ----
 const userCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c
 if (userCount === 0) {
-  db.prepare(
+  const seeded = db.prepare(
     'INSERT INTO users (username, password_hash, role, quota, created_at) VALUES (?, ?, ?, ?, ?)'
   ).run('root', bcrypt.hashSync('123456', 10), 'admin', 100, now())
+  // 初始额度也要有流水,否则对账每次都会把 root 报成「余额凭空多出来」。
+  // 这里直接写表而不是调 ledger.js —— 那个模块反过来 import 本文件
+  db.prepare(
+    `INSERT INTO balance_ledger (user_id, amount, balance_after, type, note, created_at)
+     VALUES (?, ?, ?, 'signup', '初始管理员额度', ?)`
+  ).run(seeded.lastInsertRowid, 100, 100, now())
   console.log('[RouteX] seeded admin account: root / 123456 (请尽快修改密码)')
 }
 

@@ -105,7 +105,9 @@ router.post('/admin/:id/approve', adminRequired, (req, res) => {
         )
         .run(req.user.id, now(), String(req.body?.note || '').slice(0, 200) || null, row.id)
       if (upd.changes !== 1) throw new Error('该订单已到账,请勿重复确认')
-      return creditUser(row.user_id, row.amount)
+      return creditUser(row.user_id, row.amount, {
+        type: 'topup', note: `订单 ${row.order_no}`, operatorId: req.user.id
+      })
     })()
   } catch (e) {
     return badRequest(res, e.message)
