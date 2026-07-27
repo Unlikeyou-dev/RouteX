@@ -4,13 +4,38 @@ import { api, fmtUSD, fmtNum, fmtTime } from '../api.js'
 import { useAuth } from '../store.jsx'
 import { PageHeader, Spinner, Empty, Pagination } from '../components/ui.jsx'
 
+// 默认只看最近一天。日志是排障用的,绝大多数时候要找的就是刚刚那次调用;
+// 一上来铺开全部历史,既慢又得自己翻。要看更早的再往后选。
+const RANGES = [
+  { key: '1d', label: '最近一天', days: 1 },
+  { key: '7d', label: '最近 7 天', days: 7 },
+  { key: '30d', label: '最近 30 天', days: 30 },
+  { key: 'all', label: '全部', days: 0 },
+  { key: 'custom', label: '自定义' }
+]
+
 const emptyFilters = {
-  model: '', status: '', scope: 'mine', username: '', token_name: '', channel_id: '', start: '', end: ''
+  model: '', status: '', scope: 'mine', username: '', token_name: '', channel_id: '',
+  range: '1d', start: '', end: ''
 }
 
 // <input type="date"> 的 YYYY-MM-DD → 当天起点 / 终点的秒级时间戳
 const dayStart = d => Math.floor(new Date(`${d}T00:00:00`).getTime() / 1000)
 const dayEnd = d => Math.floor(new Date(`${d}T23:59:59`).getTime() / 1000)
+
+// 预设区间取的是滚动窗口(此刻往前 N 天),不是自然日 ——
+// 「最近一天」在凌晨一点该包含昨天下午的调用,按自然日切会把它切掉
+function rangeParams(f) {
+  if (f.range === 'custom') {
+    return {
+      ...(f.start ? { start: dayStart(f.start) } : {}),
+      ...(f.end ? { end: dayEnd(f.end) } : {})
+    }
+  }
+  const preset = RANGES.find(r => r.key === f.range)
+  if (!preset?.days) return {}
+  return { start: Math.floor(Date.now() / 1000) - preset.days * 86400 }
+}
 
 export default function Logs() {
   const { user } = useAuth()
@@ -29,8 +54,7 @@ export default function Logs() {
     if (f.model) params.set('model', f.model)
     if (f.status) params.set('status', f.status)
     if (f.token_name) params.set('token_name', f.token_name)
-    if (f.start) params.set('start', dayStart(f.start))
-    if (f.end) params.set('end', dayEnd(f.end))
+    for (const [k, v] of Object.entries(rangeParams(f))) params.set(k, v)
     if (isAdmin && f.scope === 'all') {
       params.set('scope', 'all')
       if (f.username) params.set('username', f.username)
@@ -100,11 +124,19 @@ export default function Logs() {
             ))}
           </select>
         )}
-        <div className="flex items-center gap-2">
-          <input className="input !w-[150px]" type="date" value={f.start} onChange={e => set('start', e.target.value)} />
-          <span className="text-ink-mute">→</span>
-          <input className="input !w-[150px]" type="date" value={f.end} onChange={e => set('end', e.target.value)} />
-        </div>
+        <select className="input !w-32" value={f.range} onChange={e => set('range', e.target.value)}>
+          {RANGES.map(r => (
+            <option key={r.key} value={r.key}>{r.label}</option>
+          ))}
+        </select>
+        {/* 具体日期只在真要精确定位时才露出来,平时挤在筛选栏里既占地方又不好看 */}
+        {f.range === 'custom' && (
+          <div className="flex items-center gap-2">
+            <input className="input !w-[150px]" type="date" value={f.start} onChange={e => set('start', e.target.value)} />
+            <span className="text-ink-mute">→</span>
+            <input className="input !w-[150px]" type="date" value={f.end} onChange={e => set('end', e.target.value)} />
+          </div>
+        )}
         {dirty && (
           <button className="btn-ghost !py-2" onClick={reset}>
             <RotateCcw size={15} /> 重置
@@ -128,8 +160,16 @@ export default function Logs() {
       {!data ? (
         <Spinner />
       ) : data.rows.length === 0 ? (
-        <div className="card">
+        <div className="card p-6">
           <Empty text="没有符合条件的日志" />
+          {/* 默认只看最近一天,不说清楚的话老日志「不见了」会让人以为被清掉了 */}
+          {f.range !== 'all' && (
+            <p className="mt-2 text-center text-xs text-ink-mute">
+              当前只看
+              <b className="text-ink-dim">{RANGES.find(r => r.key === f.range)?.label}</b>
+              的记录,更早的调用请把时间范围调大。
+            </p>
+          )}
         </div>
       ) : (
         <div className="card overflow-hidden">
