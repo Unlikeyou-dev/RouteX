@@ -47,11 +47,18 @@ const FEATURES = [
 
 export default function Landing() {
   const { user } = useAuth()
-  const [site, setSite] = useState({ site_name: 'RouteX', announcement: '' })
+  const [site, setSite] = useState({ site_name: 'RouteX' })
+  const [notice, setNotice] = useState(null)
   useEffect(() => {
     fetch('/api/settings/public')
       .then(r => r.json())
       .then(d => d?.data && setSite(d.data))
+      .catch(() => {})
+    // 落地页只挂最重要的一条(置顶优先,否则最新)—— 新访客要看到的是「今晚维护」,
+    // 不是一整面公告墙
+    fetch('/api/announcements')
+      .then(r => r.json())
+      .then(d => setNotice(d?.data?.[0] || null))
       .catch(() => {})
   }, [])
 
@@ -83,10 +90,10 @@ export default function Landing() {
 
       {/* Hero */}
       <section className="mx-auto max-w-6xl px-6 pb-24 pt-20 text-center md:pt-28">
-        {site.announcement && (
+        {notice && (
           <div className="mx-auto mb-8 inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-panel px-4 py-1.5 text-[13px] text-ink-dim">
             <Megaphone size={14} className="shrink-0 text-brand-600" />
-            <span className="truncate">{site.announcement}</span>
+            <span className="truncate">{notice.title}</span>
           </div>
         )}
         <h1 className="mx-auto max-w-3xl text-4xl font-bold leading-[1.2] tracking-[-0.02em] md:text-[52px] md:leading-[1.15]">

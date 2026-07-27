@@ -20,6 +20,7 @@ import relayRoutes, { inflightRelayCount, geminiRouter } from './relay.js'
 import groupsRoutes from './routes/groups.js'
 import adminRoutes from './routes/admin.js'
 import ticketRoutes from './routes/tickets.js'
+import announcementRoutes from './routes/announcements.js'
 import { startHealthChecker } from './health.js'
 import { startMaintenance } from './maintenance.js'
 import { db, getSetting } from './db.js'
@@ -72,6 +73,7 @@ app.use('/api/settings', settingsRoutes)
 app.use('/api/groups', groupsRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/tickets', ticketRoutes)
+app.use('/api/announcements', announcementRoutes)
 
 // 中转入口:三种入站协议
 // /v1      OpenAI 兼容 + Anthropic Messages(/v1/messages)

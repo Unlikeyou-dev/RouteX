@@ -22,6 +22,21 @@ export function authRequired(req, res, next) {
   }
 }
 
+// 带上就认、不带也放行。用于「未登录能看、登录了内容更多」的接口(如公告列表:
+// 落地页要在没登录时就显示,登录后还要标出哪些是未读)。
+// 注意 token 无效时也只是当作未登录,不能报错 —— 否则过期的 token 会让落地页整块空掉。
+export function optionalAuth(req, res, next) {
+  const header = req.headers.authorization || ''
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null
+  if (!token) return next()
+  try {
+    const payload = jwt.verify(token, JWT_SECRET)
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.id)
+    if (user && user.status === 1 && (payload.v ?? 0) === (user.token_version ?? 0)) req.user = user
+  } catch { /* 无效 token 按未登录处理 */ }
+  next()
+}
+
 export function adminRequired(req, res, next) {
   if (req.user?.role !== 'admin') return res.status(403).json({ success: false, message: '需要管理员权限' })
   next()

@@ -10,33 +10,43 @@ import { Toaster } from '../components/ui.jsx'
 import { useAuth } from '../store.jsx'
 import { api, fmtUSD } from '../api.js'
 
-// 站点公告原先只显示在落地页,登录后的用户完全看不到 ——
-// 涨价、维护这类通知等于发不出去。这里在控制台顶部补一条,
-// 关闭状态按内容记住,站长改了公告会重新出现。
+// 顶部横幅只展示**最重要的那一条**:置顶优先,否则就是最新的一条。
+// 一次铺开全部公告等于什么都没说,详情让用户点进公告页看。
+// 关闭状态按公告 id 记住,发了新的会重新出现。
+const BANNER_TONE = {
+  important: 'border-red-200 bg-badbg text-bad',
+  warning: 'border-amber-200 bg-warnbg text-warn',
+  info: 'border-brand-100 bg-brand-50 text-brand-700'
+}
+
 function Announcement() {
-  const [text, setText] = useState('')
+  const [item, setItem] = useState(null)
   const [dismissed, setDismissed] = useState(true)
 
   useEffect(() => {
-    api('/settings/public')
-      .then(s => {
-        const msg = (s?.announcement || '').trim()
-        setText(msg)
-        setDismissed(msg ? localStorage.getItem('routex_ann') === msg : true)
+    api('/announcements')
+      .then(list => {
+        const top = list?.[0]
+        setItem(top || null)
+        setDismissed(top ? localStorage.getItem('routex_ann') === String(top.id) : true)
       })
       .catch(() => {})
   }, [])
 
-  if (!text || dismissed) return null
+  if (!item || dismissed) return null
+  const tone = BANNER_TONE[item.level] || BANNER_TONE.info
   return (
-    <div className="flex items-start gap-3 border-b border-brand-100 bg-brand-50 px-4 py-2.5 sm:px-6">
-      <Megaphone size={15} className="mt-0.5 shrink-0 text-brand-600" />
-      <p className="flex-1 whitespace-pre-wrap text-[13px] leading-6 text-brand-700">{text}</p>
+    <div className={`flex items-start gap-3 border-b px-4 py-2.5 sm:px-6 ${tone}`}>
+      <Megaphone size={15} className="mt-0.5 shrink-0 opacity-80" />
+      <div className="flex-1 text-[13px] leading-6">
+        <NavLink to="/console/announcements" className="font-medium hover:underline">{item.title}</NavLink>
+        {item.body && <span className="ml-2 opacity-80">{item.body.split('\n')[0].slice(0, 80)}</span>}
+      </div>
       <button
-        className="shrink-0 rounded p-1 text-brand-600/70 transition-colors hover:text-brand-700"
+        className="shrink-0 rounded p-1 opacity-60 transition-opacity hover:opacity-100"
         title="不再提示"
         onClick={() => {
-          localStorage.setItem('routex_ann', text)
+          localStorage.setItem('routex_ann', String(item.id))
           setDismissed(true)
         }}
       >
@@ -69,6 +79,7 @@ const userGroups = [
   {
     title: '帮助',
     items: [
+      { to: '/console/announcements', icon: Megaphone, label: '通知公告', badge: 'announcements' },
       { to: '/console/docs', icon: BookOpen, label: '接入文档' },
       { to: '/console/tickets', icon: LifeBuoy, label: '售后支持' }
     ]
@@ -85,8 +96,9 @@ const adminGroups = [
       { to: '/console/users', icon: Users, label: '用户管理' },
       { to: '/console/topups', icon: Receipt, label: '充值订单' },
       { to: '/console/redemptions', icon: Ticket, label: '兑换码' },
-      // 工单对管理员是待办队列,放在「帮助」里找不到 —— 所以归到管理组并带角标
+      // 工单和公告对管理员是「要动手做的事」,放在「帮助」里找不到 —— 归到管理组
       { to: '/console/tickets', icon: LifeBuoy, label: '工单', badge: 'tickets' },
+      { to: '/console/announcements', icon: Megaphone, label: '公告' },
       { to: '/console/settings', icon: Settings, label: '站点设置' }
     ]
   }
@@ -94,16 +106,19 @@ const adminGroups = [
 
 const flatNav = [...userGroups, ...adminGroups].flatMap(g => g.items)
 
-// 管理员的工单入口在管理组,「帮助」里就不用重复出现一遍
+// 管理员的工单/公告入口在管理组,「帮助」里就不用重复出现一遍
+const ADMIN_MOVED = ['/console/tickets', '/console/announcements']
 const navFor = admin =>
   admin
     ? [
-      ...userGroups.map(g => ({ ...g, items: g.items.filter(i => i.to !== '/console/tickets') })),
+      ...userGroups.map(g => ({ ...g, items: g.items.filter(i => !ADMIN_MOVED.includes(i.to)) })),
       ...adminGroups
     ]
     : userGroups
 
-function NavItem({ to, icon: Icon, label, end, count }) {
+// 角标分色:待办(工单)用红色催人处理,未读(公告)用主色只做提示 ——
+// 全用红色的话真正需要你动手的事就淹了
+function NavItem({ to, icon: Icon, label, end, count, tone = 'bad' }) {
   return (
     <NavLink
       to={to}
@@ -119,7 +134,9 @@ function NavItem({ to, icon: Icon, label, end, count }) {
       <Icon size={17} className="shrink-0" />
       {label}
       {count > 0 && (
-        <span className="ml-auto rounded-full bg-bad px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
+        <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white ${
+          tone === 'brand' ? 'bg-brand-600' : 'bg-bad'
+        }`}>
           {count > 99 ? '99+' : count}
         </span>
       )}
@@ -133,13 +150,17 @@ export default function ConsoleLayout() {
   const { pathname } = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [pendingTickets, setPendingTickets] = useState(0)
+  const [unreadAnn, setUnreadAnn] = useState(0)
   useEffect(() => { setMobileOpen(false) }, [pathname])
 
-  // 待处理工单角标。跟着路由变化刷新就够了 —— 定时轮询在这个体量上是白费请求
+  // 角标跟着路由变化刷新就够了 —— 定时轮询在这个体量上是白费请求
   useEffect(() => {
-    if (user?.role !== 'admin') return
-    api('/tickets/pending-count').then(d => setPendingTickets(d.count)).catch(() => {})
-  }, [user?.role, pathname])
+    if (!user) return
+    api('/announcements/unread-count').then(d => setUnreadAnn(d.count)).catch(() => {})
+    if (user.role === 'admin') {
+      api('/tickets/pending-count').then(d => setPendingTickets(d.count)).catch(() => {})
+    }
+  }, [user?.id, user?.role, pathname])
   const current = flatNav.find(i =>
     i.end ? pathname === i.to : pathname.startsWith(i.to) && i.to !== '/console'
   ) || flatNav[0]
@@ -175,7 +196,12 @@ export default function ConsoleLayout() {
                 {group.icon && <group.icon size={12} />} {group.title}
               </div>
               {group.items.map(item => (
-                <NavItem key={item.to} {...item} count={item.badge === 'tickets' ? pendingTickets : 0} />
+                <NavItem
+                  key={item.to}
+                  {...item}
+                  count={item.badge === 'tickets' ? pendingTickets : item.badge === 'announcements' ? unreadAnn : 0}
+                  tone={item.badge === 'announcements' ? 'brand' : 'bad'}
+                />
               ))}
             </div>
           ))}

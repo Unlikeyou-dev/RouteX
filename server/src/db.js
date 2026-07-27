@@ -199,6 +199,25 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_ledger_user ON balance_ledger(user_id, i
   }
 }
 
+// 公告。
+//
+// 原先只有 settings 里一条 announcement 字符串:发新的就把旧的覆盖掉,没有历史、
+// 没有日期、没有轻重之分 —— 调价通知和「今晚维护 10 分钟」挤在同一个格子里。
+db.exec(`CREATE TABLE IF NOT EXISTS announcements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  level TEXT NOT NULL DEFAULT 'info',
+  pinned INTEGER NOT NULL DEFAULT 0,
+  published INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_ann_pub ON announcements(published, pinned, id)')
+// 未读判定用一个时间戳而不是「用户 × 公告」的关联表:小站点上后者只是让行数
+// 白白翻倍,而「打开公告页 = 全部已读」在这个体量上完全够用
+ensureColumn('users', 'announcement_read_at', 'announcement_read_at INTEGER NOT NULL DEFAULT 0')
+
 // 工单(售后支持)。
 //
 // 中转站是收钱的服务,用户充值出了问题除了干等没有别的办法找到你 —— 站点没有邮件
@@ -334,6 +353,20 @@ const defaultSettings = {
 }
 const insSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
 for (const [k, v] of Object.entries(defaultSettings)) insSetting.run(k, v)
+
+// 把旧的单条公告迁进公告列表,否则升级后站长会发现自己写的公告凭空消失了。
+// 必须排在默认设置写入之后 —— 否则全新安装时那条欢迎语还没落库,迁移会扑空
+{
+  const has = db.prepare('SELECT COUNT(*) AS c FROM announcements').get().c > 0
+  const old = has ? '' : getSetting('announcement', '').trim()
+  if (old) {
+    const ts = now()
+    db.prepare(
+      "INSERT INTO announcements (title, body, level, pinned, published, created_at, updated_at) VALUES (?, '', 'info', 0, 1, ?, ?)"
+    ).run(old.slice(0, 200), ts, ts)
+    console.log('[RouteX] 已把原有的站点公告迁入公告列表')
+  }
+}
 
 export function getSetting(key, fallback = '') {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key)

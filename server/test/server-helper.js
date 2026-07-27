@@ -10,6 +10,7 @@ export async function startServer() {
   const userRoutes = (await import('../src/routes/user.js')).default
   const usersRoutes = (await import('../src/routes/users.js')).default
   const ticketRoutes = (await import('../src/routes/tickets.js')).default
+  const announcementRoutes = (await import('../src/routes/announcements.js')).default
   const settingsRoutes = (await import('../src/routes/settings.js')).default
   const topupRoutes = (await import('../src/routes/topup.js')).default
 
@@ -19,6 +20,7 @@ export async function startServer() {
   app.use('/api/user', userRoutes)
   app.use('/api/users', usersRoutes)
   app.use('/api/tickets', ticketRoutes)
+  app.use('/api/announcements', announcementRoutes)
   app.use('/api/settings', settingsRoutes)
   app.use('/api/topup', topupRoutes)
 

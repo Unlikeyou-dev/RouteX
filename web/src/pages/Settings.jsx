@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Save, Plus, Trash2, Upload, Bell, X, ShieldCheck, HardDrive, Loader2, CloudUpload } from 'lucide-react'
 import { api, setToken } from '../api.js'
 import { toast, useAuth } from '../store.jsx'
@@ -219,10 +220,12 @@ export default function Settings() {
               <label className="label">站点名称</label>
               <input className="input" value={form.site_name} onChange={set('site_name')} />
             </div>
-            <div>
-              <label className="label">公告(展示在首页)</label>
-              <textarea className="input min-h-[72px] resize-y" value={form.announcement} onChange={set('announcement')} />
-            </div>
+            {/* 公告已经独立成一页。留在这里等于有两个地方能写公告,迟早各写各的 */}
+            <p className="text-xs leading-5 text-ink-mute">
+              站点公告请到
+              <Link to="/console/announcements" className="mx-1 font-medium text-brand-600 hover:underline">公告管理</Link>
+              发布 —— 支持多条、分级别、可置顶,用户在控制台顶部和公告页都能看到。
+            </p>
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="label">计费倍率</label>
