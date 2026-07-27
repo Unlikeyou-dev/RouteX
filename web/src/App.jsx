@@ -15,6 +15,9 @@ import Redemptions from './pages/Redemptions.jsx'
 import Topups from './pages/Topups.jsx'
 import Overview from './pages/Overview.jsx'
 import Settings from './pages/Settings.jsx'
+import Account from './pages/Account.jsx'
+import Billing from './pages/Billing.jsx'
+import Invite from './pages/Invite.jsx'
 
 export default function App() {
   return (
@@ -28,6 +31,9 @@ export default function App() {
         <Route path="logs" element={<Logs />} />
         <Route path="models" element={<Models />} />
         <Route path="wallet" element={<Wallet />} />
+        <Route path="billing" element={<Billing />} />
+        <Route path="invite" element={<Invite />} />
+        <Route path="account" element={<Account />} />
         <Route path="docs" element={<Docs />} />
         <Route path="overview" element={<Overview />} />
         <Route path="channels" element={<Channels />} />

@@ -7,7 +7,8 @@ import { uploadBackup, storageConfigured } from '../storage.js'
 
 const router = Router()
 
-const PUBLIC_KEYS = ['site_name', 'announcement']
+// 返利比例要让用户看得见,否则邀请页只能写「按比例返利」这种没人信的说法
+const PUBLIC_KEYS = ['site_name', 'announcement', 'aff_rebate_percent']
 const ADMIN_KEYS = [
   'site_name', 'announcement', 'price_ratio', 'signup_bonus', 'aff_rebate_percent',
   'cache_read_ratio', 'cache_write_ratio',

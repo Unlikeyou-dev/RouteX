@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate, Navigate, useLocation } from 'react-route
 import {
   LayoutDashboard, KeyRound, ScrollText, Boxes, Wallet, Waypoints,
   Users, Ticket, Settings, LogOut, BookOpen, ShieldCheck, Menu, Receipt, PieChart,
-  Megaphone, X
+  Megaphone, X, UserPlus, UserCog
 } from 'lucide-react'
 import Logo from '../components/Logo.jsx'
 import { Toaster } from '../components/ui.jsx'
@@ -46,23 +46,48 @@ function Announcement() {
   )
 }
 
-const userNav = [
-  { to: '/console', icon: LayoutDashboard, label: '仪表盘', end: true },
-  { to: '/console/tokens', icon: KeyRound, label: 'API 令牌' },
-  { to: '/console/logs', icon: ScrollText, label: '调用日志' },
-  { to: '/console/models', icon: Boxes, label: '模型价格' },
-  { to: '/console/wallet', icon: Wallet, label: '钱包充值' },
-  { to: '/console/docs', icon: BookOpen, label: '接入文档' }
+// 分组而不是十几项平铺 —— 平铺到十项以上,用户就不看了,只会记住前三个
+const userGroups = [
+  {
+    title: '用量',
+    items: [
+      { to: '/console', icon: LayoutDashboard, label: '仪表盘', end: true },
+      { to: '/console/tokens', icon: KeyRound, label: 'API 令牌' },
+      { to: '/console/logs', icon: ScrollText, label: '调用日志' },
+      { to: '/console/models', icon: Boxes, label: '模型价格' }
+    ]
+  },
+  {
+    title: '账户',
+    items: [
+      { to: '/console/wallet', icon: Wallet, label: '钱包充值' },
+      { to: '/console/billing', icon: Receipt, label: '账单' },
+      { to: '/console/invite', icon: UserPlus, label: '邀请好友' },
+      { to: '/console/account', icon: UserCog, label: '账号设置' }
+    ]
+  },
+  {
+    title: '帮助',
+    items: [{ to: '/console/docs', icon: BookOpen, label: '接入文档' }]
+  }
 ]
 
-const adminNav = [
-  { to: '/console/overview', icon: PieChart, label: '全站总览' },
-  { to: '/console/channels', icon: Waypoints, label: '上游渠道' },
-  { to: '/console/users', icon: Users, label: '用户管理' },
-  { to: '/console/topups', icon: Receipt, label: '充值订单' },
-  { to: '/console/redemptions', icon: Ticket, label: '兑换码' },
-  { to: '/console/settings', icon: Settings, label: '站点设置' }
+const adminGroups = [
+  {
+    title: '管理',
+    icon: ShieldCheck,
+    items: [
+      { to: '/console/overview', icon: PieChart, label: '全站总览' },
+      { to: '/console/channels', icon: Waypoints, label: '上游渠道' },
+      { to: '/console/users', icon: Users, label: '用户管理' },
+      { to: '/console/topups', icon: Receipt, label: '充值订单' },
+      { to: '/console/redemptions', icon: Ticket, label: '兑换码' },
+      { to: '/console/settings', icon: Settings, label: '站点设置' }
+    ]
+  }
 ]
+
+const flatNav = [...userGroups, ...adminGroups].flatMap(g => g.items)
 
 function NavItem({ to, icon: Icon, label, end }) {
   return (
@@ -89,9 +114,9 @@ export default function ConsoleLayout() {
   const { pathname } = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   useEffect(() => { setMobileOpen(false) }, [pathname])
-  const current = [...userNav, ...adminNav].find(i =>
+  const current = flatNav.find(i =>
     i.end ? pathname === i.to : pathname.startsWith(i.to) && i.to !== '/console'
-  ) || userNav[0]
+  ) || flatNav[0]
 
   if (loading)
     return (
@@ -118,19 +143,16 @@ export default function ConsoleLayout() {
           </NavLink>
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3">
-          {userNav.map(item => (
-            <NavItem key={item.to} {...item} />
-          ))}
-          {user.role === 'admin' && (
-            <>
-              <div className="flex items-center gap-2 px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-widest text-ink-mute">
-                <ShieldCheck size={12} /> 管理
+          {[...userGroups, ...(user.role === 'admin' ? adminGroups : [])].map((group, gi) => (
+            <div key={group.title}>
+              <div className={`flex items-center gap-2 px-3 pb-1 text-[11px] font-semibold uppercase tracking-widest text-ink-mute ${gi ? 'pt-5' : 'pt-1'}`}>
+                {group.icon && <group.icon size={12} />} {group.title}
               </div>
-              {adminNav.map(item => (
+              {group.items.map(item => (
                 <NavItem key={item.to} {...item} />
               ))}
-            </>
-          )}
+            </div>
+          ))}
         </nav>
         <div className="border-t border-line p-3">
           <div className="flex items-center gap-3 rounded-lg px-2 py-2">

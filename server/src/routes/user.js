@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { db, now } from '../db.js'
 import { authRequired, publicUser, signToken } from '../middleware/auth.js'
 import { badRequest } from '../util.js'
+import { listLedger } from '../ledger.js'
 
 const router = Router()
 router.use(authRequired)
@@ -31,6 +32,21 @@ router.put('/me', (req, res) => {
   res.json({
     success: true,
     data: { ...publicUser(user), ...(changedPassword ? { token: signToken(user) } : {}) }
+  })
+})
+
+// 自己的余额流水。管理端那份带 operator_id(谁改的),用户端不给 ——
+// 让用户看见「是哪个管理员动了我的余额」没有意义,只会徒增疑虑。
+router.get('/ledger', (req, res) => {
+  const page = Math.max(1, Number(req.query.page) || 1)
+  const size = Math.min(100, Math.max(1, Number(req.query.page_size) || 20))
+  const { rows, total } = listLedger(req.user.id, { limit: size, offset: (page - 1) * size })
+  res.json({
+    success: true,
+    data: {
+      rows: rows.map(({ operator_id, operator_name, ...r }) => r),
+      total, page, page_size: size
+    }
   })
 })
 
