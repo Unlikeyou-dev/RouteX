@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate, Navigate, useLocation } from 'react-route
 import {
   LayoutDashboard, KeyRound, ScrollText, Boxes, Wallet, Waypoints,
   Users, Ticket, Settings, LogOut, BookOpen, ShieldCheck, Menu, Receipt, PieChart,
-  Megaphone, X, UserPlus, UserCog
+  Megaphone, X, UserPlus, UserCog, LifeBuoy
 } from 'lucide-react'
 import Logo from '../components/Logo.jsx'
 import { Toaster } from '../components/ui.jsx'
@@ -68,7 +68,10 @@ const userGroups = [
   },
   {
     title: '帮助',
-    items: [{ to: '/console/docs', icon: BookOpen, label: '接入文档' }]
+    items: [
+      { to: '/console/docs', icon: BookOpen, label: '接入文档' },
+      { to: '/console/tickets', icon: LifeBuoy, label: '售后支持' }
+    ]
   }
 ]
 
@@ -82,6 +85,8 @@ const adminGroups = [
       { to: '/console/users', icon: Users, label: '用户管理' },
       { to: '/console/topups', icon: Receipt, label: '充值订单' },
       { to: '/console/redemptions', icon: Ticket, label: '兑换码' },
+      // 工单对管理员是待办队列,放在「帮助」里找不到 —— 所以归到管理组并带角标
+      { to: '/console/tickets', icon: LifeBuoy, label: '工单', badge: 'tickets' },
       { to: '/console/settings', icon: Settings, label: '站点设置' }
     ]
   }
@@ -89,7 +94,16 @@ const adminGroups = [
 
 const flatNav = [...userGroups, ...adminGroups].flatMap(g => g.items)
 
-function NavItem({ to, icon: Icon, label, end }) {
+// 管理员的工单入口在管理组,「帮助」里就不用重复出现一遍
+const navFor = admin =>
+  admin
+    ? [
+      ...userGroups.map(g => ({ ...g, items: g.items.filter(i => i.to !== '/console/tickets') })),
+      ...adminGroups
+    ]
+    : userGroups
+
+function NavItem({ to, icon: Icon, label, end, count }) {
   return (
     <NavLink
       to={to}
@@ -104,6 +118,11 @@ function NavItem({ to, icon: Icon, label, end }) {
     >
       <Icon size={17} className="shrink-0" />
       {label}
+      {count > 0 && (
+        <span className="ml-auto rounded-full bg-bad px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
     </NavLink>
   )
 }
@@ -113,7 +132,14 @@ export default function ConsoleLayout() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [pendingTickets, setPendingTickets] = useState(0)
   useEffect(() => { setMobileOpen(false) }, [pathname])
+
+  // 待处理工单角标。跟着路由变化刷新就够了 —— 定时轮询在这个体量上是白费请求
+  useEffect(() => {
+    if (user?.role !== 'admin') return
+    api('/tickets/pending-count').then(d => setPendingTickets(d.count)).catch(() => {})
+  }, [user?.role, pathname])
   const current = flatNav.find(i =>
     i.end ? pathname === i.to : pathname.startsWith(i.to) && i.to !== '/console'
   ) || flatNav[0]
@@ -143,13 +169,13 @@ export default function ConsoleLayout() {
           </NavLink>
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3">
-          {[...userGroups, ...(user.role === 'admin' ? adminGroups : [])].map((group, gi) => (
+          {navFor(user.role === 'admin').map((group, gi) => (
             <div key={group.title}>
               <div className={`flex items-center gap-2 px-3 pb-1 text-[11px] font-semibold uppercase tracking-widest text-ink-mute ${gi ? 'pt-5' : 'pt-1'}`}>
                 {group.icon && <group.icon size={12} />} {group.title}
               </div>
               {group.items.map(item => (
-                <NavItem key={item.to} {...item} />
+                <NavItem key={item.to} {...item} count={item.badge === 'tickets' ? pendingTickets : 0} />
               ))}
             </div>
           ))}

@@ -18,6 +18,7 @@ import Settings from './pages/Settings.jsx'
 import Account from './pages/Account.jsx'
 import Billing from './pages/Billing.jsx'
 import Invite from './pages/Invite.jsx'
+import Tickets from './pages/Tickets.jsx'
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
         <Route path="billing" element={<Billing />} />
         <Route path="invite" element={<Invite />} />
         <Route path="account" element={<Account />} />
+        <Route path="tickets" element={<Tickets />} />
         <Route path="docs" element={<Docs />} />
         <Route path="overview" element={<Overview />} />
         <Route path="channels" element={<Channels />} />

@@ -199,6 +199,35 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_ledger_user ON balance_ledger(user_id, i
   }
 }
 
+// 工单(售后支持)。
+//
+// 中转站是收钱的服务,用户充值出了问题除了干等没有别的办法找到你 —— 站点没有邮件
+// 基础设施,Bark 又只在你手上。工单是唯一一条用户能主动发起、双方都能回溯的通道。
+//
+// status 只留三态:open 需要你处理 / answered 已回复等用户 / closed 已关闭。
+// 更细的状态机(处理中、挂起、升级)对单人运营的站点是负担,不是帮助。
+db.exec(`CREATE TABLE IF NOT EXISTS tickets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  subject TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'other',
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  closed_at INTEGER
+)`)
+db.exec(`CREATE TABLE IF NOT EXISTS ticket_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ticket_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  is_staff INTEGER NOT NULL DEFAULT 0,
+  body TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+)`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_tickets_user ON tickets(user_id, id)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status, updated_at)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_ticket_msgs ON ticket_messages(ticket_id, id)')
+
 // 渠道兼容性自检结果:按「渠道 + 模型」记一份能力表。
 // 我们按模型名猜世代来裁剪参数,但上游是别人的中转站,改版、限制、魔改都可能
 // 让某个参数突然被拒 —— 那时用户看到的只是一片 400,没人知道是哪个字段的问题。
