@@ -61,7 +61,7 @@ router.get('/', (req, res) => {
 router.post('/', (req, res) => {
   const {
     name, base_url = '', api_key, models = '', model_mapping = '{}',
-    priority = 0, weight = 1, type = 'openai', group_names = 'default'
+    priority = 0, weight = 1, type = 'openai', group_names = 'default', bearer_auth = false
   } = req.body || {}
   if (!name || !api_key) return badRequest(res, '名称、密钥均为必填')
   if (!TYPES.includes(type)) return badRequest(res, '未知的渠道类型')
@@ -71,12 +71,12 @@ router.post('/', (req, res) => {
   if (groups.error) return badRequest(res, groups.error)
   const info = db
     .prepare(
-      `INSERT INTO channels (name, base_url, api_key, models, model_mapping, priority, weight, type, group_names, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO channels (name, base_url, api_key, models, model_mapping, priority, weight, type, group_names, bearer_auth, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       name, normalizeBaseUrl(base_url, type), api_key, models, model_mapping || '{}',
-      Number(priority) || 0, Number(weight) || 1, type, groups.value, now()
+      Number(priority) || 0, Number(weight) || 1, type, groups.value, bearer_auth ? 1 : 0, now()
     )
   res.json({ success: true, data: db.prepare('SELECT * FROM channels WHERE id = ?').get(info.lastInsertRowid) })
 })
@@ -100,7 +100,7 @@ router.put('/:id', (req, res) => {
   // 手动启用时清除熔断状态,给渠道重新上场的机会
   const enabling = b.status !== undefined && b.status && row.status !== 1
   db.prepare(
-    `UPDATE channels SET name=?, base_url=?, api_key=?, models=?, model_mapping=?, priority=?, weight=?, type=?, group_names=?, status=?,
+    `UPDATE channels SET name=?, base_url=?, api_key=?, models=?, model_mapping=?, priority=?, weight=?, type=?, group_names=?, status=?,\n     bearer_auth=?,
      auto_disabled = CASE WHEN ? THEN 0 ELSE auto_disabled END,
      fail_count = CASE WHEN ? THEN 0 ELSE fail_count END
      WHERE id=?`
@@ -115,6 +115,7 @@ router.put('/:id', (req, res) => {
     b.type ?? row.type,
     groupValue,
     b.status !== undefined ? (b.status ? 1 : 0) : row.status,
+    b.bearer_auth ? 1 : 0,
     enabling ? 1 : 0,
     enabling ? 1 : 0,
     row.id

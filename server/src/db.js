@@ -127,6 +127,9 @@ ensureColumn('users', 'aff_count', 'aff_count INTEGER NOT NULL DEFAULT 0')
 // 会话版本号:改密码/管理员重置时递增,使已签发的 JWT 立即失效
 ensureColumn('users', 'token_version', 'token_version INTEGER NOT NULL DEFAULT 0')
 ensureColumn('channels', 'type', "type TEXT NOT NULL DEFAULT 'openai'")
+// 第三方网关(如 api.longcat.chat)走 Anthropic 路径但鉴权用的是 Bearer,
+// 打开这个开关就把 x-api-key 换成 Authorization: Bearer
+ensureColumn('channels', 'bearer_auth', 'bearer_auth INTEGER NOT NULL DEFAULT 0')
 ensureColumn('channels', 'auto_disabled', 'auto_disabled INTEGER NOT NULL DEFAULT 0')
 ensureColumn('channels', 'fail_count', 'fail_count INTEGER NOT NULL DEFAULT 0')
 // 渠道可服务的用户分组(可多组,逗号/换行分隔);用户只会被路由到自己所在组的渠道

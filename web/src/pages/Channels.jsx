@@ -7,7 +7,7 @@ import { ModelPicker, MappingEditor } from '../components/ModelFields.jsx'
 
 const emptyForm = {
   name: '', base_url: '', api_key: '', models: '',
-  model_mapping: '{}', priority: 0, weight: 1, type: 'openai', group_names: 'default'
+  model_mapping: '{}', priority: 0, weight: 1, type: 'openai', group_names: 'default', bearer_auth: '0'
 }
 
 const TYPE_META = {
@@ -53,6 +53,7 @@ export default function Channels() {
       name: row.name, base_url: row.base_url, api_key: row.api_key,
       models: row.models, model_mapping: row.model_mapping,
       priority: row.priority, weight: row.weight, type: row.type || 'openai',
+      bearer_auth: row.bearer_auth ? '1' : '0',
       group_names: row.group_names || 'default'
     })
     setModal({ mode: 'edit', row })
@@ -400,6 +401,24 @@ export default function Channels() {
               onChange={set('api_key')}
             />
           </div>
+          {/* 第三方网关(如 api.longcat.chat)走 Anthropic 路径但鉴权用的是 Bearer,
+              只有 Claude 原生渠道才需要这个开关,其他类型隐藏 */}
+          {form.type === 'anthropic' && (
+            <div className="flex items-center justify-between rounded-xl border border-line bg-panel px-4 py-3">
+              <div>
+                <div className="text-sm font-medium">使用 Bearer 鉴权</div>
+                <div className="text-xs leading-5 text-ink-mute">
+                  部分第三方网关走 <code className="rounded bg-card px-1">/v1/messages</code> 路径,
+                  但要求 <code className="rounded bg-card px-1">Authorization: Bearer</code> 而不是
+                  <code className="rounded bg-card px-1">x-api-key</code>。打不开时试试开这个。
+                </div>
+              </div>
+              <Switch
+                checked={form.bearer_auth === '1' || form.bearer_auth === true}
+                onChange={v => setForm(f => ({ ...f, bearer_auth: v ? '1' : '0' }))}
+              />
+            </div>
+          )}
           <ModelPicker
             value={form.models}
             onChange={v => setForm(f => ({ ...f, models: v }))}

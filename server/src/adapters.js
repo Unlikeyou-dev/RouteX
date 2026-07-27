@@ -450,11 +450,15 @@ export function buildAnthropicPassthrough(channel, apiKey, body, upstreamModel, 
     if (cached.messages) payload.messages = cached.messages
   }
 
+  const authHeader = channel.bearer_auth
+    ? { Authorization: `Bearer ${apiKey}` }
+    : { 'x-api-key': apiKey }
+
   return {
     url: `${channelBaseUrl(channel)}/v1/messages`,
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': apiKey,
+      ...authHeader,
       'anthropic-version': '2023-06-01'
     },
     payload
@@ -546,11 +550,17 @@ export function buildUpstreamRequest(channel, apiKey, path, body, upstreamModel,
     const outputConfig = { ...(think.extra.output_config || {}), ...(so.outputConfig || {}) }
     const { output_config: _drop, ...thinkExtra } = think.extra
 
+    // 第三方网关(如 api.longcat.chat)走 Anthropic 路径但鉴权用的是 Bearer,
+    // 渠道上开了「使用 Bearer 鉴权」就换成 Authorization: Bearer
+    const authHeader = channel.bearer_auth
+      ? { Authorization: `Bearer ${apiKey}` }
+      : { 'x-api-key': apiKey }
+
     return {
       url: `${base}/v1/messages`,
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
+        ...authHeader,
         'anthropic-version': '2023-06-01'
       },
       payload: {
